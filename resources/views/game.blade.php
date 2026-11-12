@@ -19,6 +19,10 @@
             <div class="readout" title="Time"><span class="label">Time</span><span id="timer">0.0</span></div>
         </div>
 
+        <button type="button" id="flag-mode" class="toggle" aria-pressed="false" title="Tap cells to flag them instead of revealing (F)">
+            <span aria-hidden="true">⚑</span> Flag mode
+        </button>
+
         <div class="board-wrap">
             <div id="board" class="board" role="grid" aria-label="Minefield"></div>
         </div>
@@ -32,13 +36,16 @@
             </p>
         </div>
 
+        <p id="stats" class="stats"></p>
+
         <p class="help">
-            Click to reveal. Right-click or long-press to flag. Click a number with all its flags placed to clear around it.
+            Click to reveal. Right-click or long-press to flag, or switch on flag mode. Click a number with all its flags placed to clear around it.
+            Keys: arrows move, Space reveals, F flags, N starts a new game, 1–3 change difficulty.
             @guest No account needed to play. @endguest
         </p>
     </section>
 @endsection
 
 @push('scripts')
-    <script src="{{ asset('js/game.js') }}" defer></script>
+    <script src="{{ asset('js/game.js') }}?v={{ filemtime(public_path('js/game.js')) }}" defer></script>
 @endpush
