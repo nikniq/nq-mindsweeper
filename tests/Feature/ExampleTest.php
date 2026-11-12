@@ -212,6 +212,52 @@ class ExampleTest extends TestCase
         config(['services.google.client_id' => 'test-id', 'services.google.client_secret' => 'test-secret']);
     }
 
+    public function test_saved_win_reports_the_players_leaderboard_position(): void
+    {
+        $faster = User::factory()->create();
+        $faster->scores()->createMany([
+            ['difficulty' => 'beginner', 'time_ms' => 5000],
+            ['difficulty' => 'beginner', 'time_ms' => 6000],
+        ]);
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->postJson('/scores', ['difficulty' => 'beginner', 'time_ms' => 9000])
+            ->assertCreated()->assertJson(['rank' => 2]);
+        $this->actingAs($user)->postJson('/scores', ['difficulty' => 'beginner', 'time_ms' => 4000])
+            ->assertCreated()->assertJson(['rank' => 1]);
+        $this->actingAs($user)->postJson('/scores', ['difficulty' => 'expert', 'time_ms' => 90000])
+            ->assertCreated()->assertJson(['rank' => 1]);
+    }
+
+    public function test_player_can_change_their_leaderboard_name(): void
+    {
+        $user = User::factory()->create(['name' => 'Swift Otter']);
+        $user->scores()->create(['difficulty' => 'beginner', 'time_ms' => 8000]);
+
+        $this->actingAs($user)->patch('/name', ['name' => 'Ada  L.'])->assertSessionHasNoErrors();
+
+        $this->assertSame('Ada L.', $user->refresh()->name);
+        $this->get('/leaderboard')->assertSee('Ada L.');
+    }
+
+    public function test_leaderboard_name_must_be_unique_and_plain(): void
+    {
+        User::factory()->create(['name' => 'Taken']);
+        $user = User::factory()->create(['name' => 'Swift Otter']);
+
+        $this->actingAs($user)->patch('/name', ['name' => 'Taken'])->assertSessionHasErrors('name');
+        $this->actingAs($user)->patch('/name', ['name' => '<b>x</b>'])->assertSessionHasErrors('name');
+        $this->actingAs($user)->patch('/name', ['name' => 'A'])->assertSessionHasErrors('name');
+        $this->actingAs($user)->patch('/name', ['name' => 'Swift Otter'])->assertSessionHasNoErrors();
+
+        $this->assertSame('Swift Otter', $user->refresh()->name);
+    }
+
+    public function test_guests_cannot_change_a_name(): void
+    {
+        $this->patch('/name', ['name' => 'Nobody'])->assertRedirect('/login');
+    }
+
     public function test_invalid_scores_and_bad_logins_are_rejected(): void
     {
         $this->postJson('/scores', ['difficulty' => 'godmode', 'time_ms' => 0])

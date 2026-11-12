@@ -8,6 +8,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Laravel\Socialite\Facades\Socialite;
 use Symfony\Component\HttpFoundation\RedirectResponse as SymfonyRedirectResponse;
@@ -125,6 +126,26 @@ class AuthController extends Controller
     public static function googleEnabled(): bool
     {
         return filled(config('services.google.client_id')) && filled(config('services.google.client_secret'));
+    }
+
+    /**
+     * Change the name the player is shown under on the leaderboard.
+     */
+    public function rename(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'name' => [
+                'required', 'string', 'min:2', 'max:20', 'regex:/^[\pL\pN][\pL\pN _.\-]*$/u',
+                Rule::unique('users', 'name')->ignore($request->user()->id),
+            ],
+        ], [
+            'name.regex' => 'Use letters, numbers, spaces, dots, dashes or underscores, starting with a letter or number.',
+            'name.unique' => 'Another player already has that name.',
+        ]);
+
+        $request->user()->update(['name' => Str::squish($data['name'])]);
+
+        return back()->with('status', 'You now appear as '.$request->user()->name.'.');
     }
 
     public function logout(Request $request): RedirectResponse

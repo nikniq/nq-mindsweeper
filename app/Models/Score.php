@@ -51,6 +51,26 @@ class Score extends Model
     }
 
     /**
+     * The player's position on a difficulty's leaderboard, or null when they
+     * have no time on it. Players are ordered by their best time; the daily
+     * board only looks at today.
+     */
+    public static function rankFor(User $user, string $difficulty): ?int
+    {
+        $onBoard = fn () => self::query()
+            ->where('difficulty', $difficulty)
+            ->when($difficulty === self::DAILY, fn ($query) => $query->where('created_at', '>=', now()->startOfDay()));
+
+        $best = $onBoard()->where('user_id', $user->id)->min('time_ms');
+
+        if ($best === null) {
+            return null;
+        }
+
+        return $onBoard()->where('time_ms', '<', $best)->distinct()->count('user_id') + 1;
+    }
+
+    /**
      * Move any wins the visitor made as a guest onto their account.
      */
     public static function claimPending(User $user): int

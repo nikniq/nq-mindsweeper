@@ -37,5 +37,18 @@
                 </tbody>
             </table>
         @endif
+
+        @auth
+            <form method="POST" action="{{ route('name.update') }}" class="rename" id="name">
+                @csrf
+                @method('PATCH')
+                <label for="name-input">Your leaderboard name</label>
+                <div class="row">
+                    <input id="name-input" type="text" name="name" value="{{ old('name', auth()->user()->name) }}" minlength="2" maxlength="20" required autocomplete="nickname">
+                    <button type="submit" class="btn small">Save</button>
+                </div>
+                @error('name') <span class="error">{{ $message }}</span> @enderror
+            </form>
+        @endauth
     </section>
 @endsection

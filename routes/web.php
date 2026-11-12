@@ -23,4 +23,5 @@ Route::middleware('guest')->group(function () {
     });
 });
 
+Route::patch('/name', [AuthController::class, 'rename'])->middleware(['auth', 'throttle:10,1'])->name('name.update');
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->name('logout');

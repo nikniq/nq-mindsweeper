@@ -241,6 +241,14 @@ button.link:hover { color: var(--text); }
 .scores .num { text-align: right; }
 .scores tr.me td { background: rgba(124, 156, 255, .12); font-weight: 600; }
 .empty { color: var(--muted); margin-top: 16px; }
+a.who { text-decoration: none; }
+.rename { display: flex; flex-direction: column; gap: 6px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); font-size: .9rem; color: var(--muted); }
+.rename .row, .custom { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rename input, .custom input { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
+.rename input { flex: 1; min-width: 0; }
+.custom { justify-content: center; font-size: .9rem; color: var(--muted); }
+.custom[hidden] { display: none; }
+.custom input { width: 4.5em; }
 
 @media (max-width: 560px) {
     .hud { gap: 10px; }

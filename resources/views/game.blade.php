@@ -13,7 +13,15 @@
             @foreach ($difficulties as $key => $d)
                 <button type="button" data-difficulty="{{ $key }}" title="{{ $d['cols'] }}×{{ $d['rows'] }}, {{ $d['mines'] }} mines">{{ $d['label'] }}</button>
             @endforeach
+            <button type="button" data-difficulty="custom" title="Choose your own board size; not ranked">Custom</button>
         </div>
+
+        <form id="custom-form" class="custom" hidden>
+            <label>Width <input type="number" name="cols" min="5" max="40" required></label>
+            <label>Height <input type="number" name="rows" min="5" max="30" required></label>
+            <label>Mines <input type="number" name="mines" min="1" required></label>
+            <button type="submit" class="btn small">Apply</button>
+        </form>
 
         <div class="hud">
             <div class="readout" title="Mines left"><span class="label">Mines</span><span id="mines-left">0</span></div>
@@ -60,7 +68,7 @@
 
         <p class="help">
             Click to reveal. Right-click or long-press to flag, or switch on flag mode. Click a number with all its flags placed to clear around it.
-            Keys: arrows move, Space reveals, F flags, H gives a hint (adds 10 seconds), G switches no-guessing boards, N starts a new game, M toggles music, 1–4 change difficulty.
+            Keys: arrows move, Space reveals, F flags, H gives a hint (adds 10 seconds), G switches no-guessing boards, N starts a new game, M toggles music, 1–5 change difficulty.
             @guest No account needed to play. @endguest
         </p>
     </section>

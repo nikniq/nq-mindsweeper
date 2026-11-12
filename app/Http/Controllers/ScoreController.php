@@ -63,7 +63,7 @@ class ScoreController extends Controller
 
             $user->scores()->create($score);
 
-            return response()->json(['saved' => true], 201);
+            return response()->json(['saved' => true, 'rank' => Score::rankFor($user, $data['difficulty'])], 201);
         }
 
         $pending = $request->session()->get(Score::PENDING_KEY, []);

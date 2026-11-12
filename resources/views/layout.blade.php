@@ -14,7 +14,7 @@
             <a href="{{ route('game') }}" @class(['active' => request()->routeIs('game')])>Play</a>
             <a href="{{ route('leaderboard') }}" @class(['active' => request()->routeIs('leaderboard')])>Leaderboard</a>
             @auth
-                <span class="who">{{ auth()->user()->name }}</span>
+                <a class="who" href="{{ route('leaderboard') }}#name" title="Change your name">{{ auth()->user()->name }}</a>
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf
                     <button type="submit" class="link">Log out</button>

@@ -21,7 +21,19 @@
     const resultShare = document.getElementById('result-share');
     const shareBtn = document.getElementById('share');
     const audio = window.GameAudio;
-    const DAILY = 'daily', DAY = root.dataset.day;
+    const customForm = document.getElementById('custom-form');
+    const DAILY = 'daily', CUSTOM = 'custom', DAY = root.dataset.day;
+
+    // A board of the player's own choosing, kept in this browser and never ranked.
+    function customBoard(wanted) {
+        const whole = (value, min, max, fallback) => {
+            const number = Math.round(Number(value));
+            return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+        };
+        const cols = whole(wanted?.cols, 5, 40, 12), rows = whole(wanted?.rows, 5, 30, 12);
+        // Leave room for the clear area around the first click.
+        return { label: 'Custom', cols, rows, mines: whole(wanted?.mines, 1, cols * rows - 9, 20) };
+    }
     const HINT_PENALTY_MS = 10000;
     const csrf = document.querySelector('meta[name="csrf-token"]').content;
 
@@ -46,6 +58,11 @@
         // Stored as a bare string by earlier versions, so it is not read as JSON.
         const saved = localStorage.getItem('difficulty');
         if (saved && DIFFICULTIES[saved]) difficulty = saved;
+    } catch (e) { /* storage unavailable */ }
+
+    DIFFICULTIES[CUSTOM] = customBoard(load(CUSTOM, null));
+    try {
+        if (localStorage.getItem('difficulty') === CUSTOM) difficulty = CUSTOM;
     } catch (e) { /* storage unavailable */ }
 
     // Per-difficulty record kept in this browser: played, won, best (ms), streak.
@@ -109,6 +126,11 @@
     }
 
     function renderStats() {
+        if (difficulty === CUSTOM) {
+            const board = DIFFICULTIES[CUSTOM];
+            statsEl.textContent = `${board.cols}×${board.rows} with ${board.mines} mines. Custom boards are not ranked.`;
+            return;
+        }
         const s = record();
         if (!s.played) {
             statsEl.textContent = `No finished games on ${DIFFICULTIES[difficulty].label} yet.`;
@@ -200,7 +222,12 @@
             ranked = false;
             setTip(LOGIC_TIP);
         } else {
+            ranked = difficulty !== CUSTOM;
             setTip('');
+        }
+        customForm.hidden = difficulty !== CUSTOM;
+        if (difficulty === CUSTOM) {
+            for (const field of ['cols', 'rows', 'mines']) customForm.elements[field].value = DIFFICULTIES[CUSTOM][field];
         }
         resultDetail.hidden = true;
         resultShare.hidden = true;
@@ -298,18 +325,25 @@
         // working in short slices so the page stays responsive.
         building = true;
         setTip('Building a board that needs no guessing…');
-        const game = gameId;
+        const game = gameId, deadline = performance.now() + 4000;
         (function search() {
             if (game !== gameId) return;
             const until = performance.now() + 25;
+            let layout;
             do {
-                const layout = layMines(i, Math.random);
+                layout = layMines(i, Math.random);
                 if (solvable(layout, i)) {
                     building = false;
                     setTip(LOGIC_TIP);
                     return begin(layout, i);
                 }
             } while (performance.now() < until);
+            // Very dense custom boards may have no such layout worth waiting for.
+            if (performance.now() > deadline) {
+                building = false;
+                setTip('No board this dense could be found that avoids guessing, so this one may need a guess.');
+                return begin(layout, i);
+            }
             setTimeout(search, 0);
         })();
     }
@@ -511,7 +545,10 @@
             : '';
         let summary = `Cleared in ${time}s${hints}.`;
         const practice = !ranked;
-        if (practice) summary += logicGame ? ' No-guessing board, not ranked.' : ' Practice run, not ranked.';
+        if (practice) {
+            summary += difficulty === CUSTOM ? ' Custom board, not ranked.'
+                : logicGame ? ' No-guessing board, not ranked.' : ' Practice run, not ranked.';
+        }
         else if (recordResult(true, ms) && difficulty !== DAILY) summary += ' New personal best!';
         showResult('won', summary);
 
@@ -672,7 +709,8 @@
             if (!res.ok && res.status !== 409) throw new Error('HTTP ' + res.status);
             const data = await res.json();
             if (data.saved) {
-                resultText.textContent = `${summary} Saved to the leaderboard.`;
+                const place = data.rank ? ` You are #${data.rank} on ${DIFFICULTIES[difficulty].label}.` : '';
+                resultText.textContent = `${summary} Saved to the leaderboard.${place}`;
             } else if (data.reason === 'stale') {
                 resultText.textContent = `${summary} A new daily board has started since you loaded the page, so this time was not saved. Reload to play it.`;
             } else if (data.reason === 'played') {
@@ -815,6 +853,13 @@
         b.addEventListener('click', () => setDifficulty(b.dataset.difficulty));
     });
     document.getElementById('new-game').addEventListener('click', newGame);
+    customForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const board = customBoard(Object.fromEntries(new FormData(customForm)));
+        DIFFICULTIES[CUSTOM] = board;
+        save(CUSTOM, board);
+        setDifficulty(CUSTOM);
+    });
     flagModeBtn.addEventListener('click', () => setFlagMode(!flagMode));
     hintBtn.addEventListener('click', hint);
     logicBtn.setAttribute('aria-pressed', logicMode);
