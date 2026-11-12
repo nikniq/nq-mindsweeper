@@ -5,6 +5,8 @@
 @section('content')
     <section class="game" id="game"
              data-difficulties='@json($difficulties)'
+             data-day="{{ \App\Models\Score::today() }}"
+             data-app="{{ config('app.name') }}"
              data-score-url="{{ route('scores.store') }}"
              data-authed="{{ auth()->check() ? '1' : '0' }}">
         <div class="difficulty" role="group" aria-label="Difficulty">
@@ -23,6 +25,9 @@
             <button type="button" id="flag-mode" class="toggle" aria-pressed="false" title="Tap cells to flag them instead of revealing (F)">
                 <span aria-hidden="true">⚑</span> Flag mode
             </button>
+            <button type="button" id="hint" class="toggle" title="Show a safe move, at a cost of 10 seconds (H)">
+                <span aria-hidden="true">💡</span> Hint <small>+10s</small>
+            </button>
             <button type="button" id="music" class="toggle" aria-pressed="false" title="Background music (M)">
                 <span aria-hidden="true">♪</span> Music
             </button>
@@ -31,12 +36,16 @@
             </button>
         </div>
 
+        <p id="tip" class="tip" role="status" aria-live="polite" hidden></p>
+
         <div class="board-wrap">
             <div id="board" class="board" role="grid" aria-label="Minefield"></div>
         </div>
 
         <div id="result" class="result" role="status" aria-live="polite" hidden>
             <p id="result-text"></p>
+            <p id="result-detail" class="detail" hidden></p>
+            <p id="result-share" hidden><button type="button" id="share" class="btn small">Share result</button></p>
             <p id="result-guest" hidden>
                 Want your name on the leaderboard?
                 <a class="btn small" href="{{ route('register') }}">Register</a>
@@ -48,7 +57,7 @@
 
         <p class="help">
             Click to reveal. Right-click or long-press to flag, or switch on flag mode. Click a number with all its flags placed to clear around it.
-            Keys: arrows move, Space reveals, F flags, N starts a new game, M toggles music, 1–3 change difficulty.
+            Keys: arrows move, Space reveals, F flags, H gives a hint (adds 10 seconds), N starts a new game, M toggles music, 1–4 change difficulty.
             @guest No account needed to play. @endguest
         </p>
     </section>

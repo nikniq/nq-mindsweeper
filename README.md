@@ -7,9 +7,13 @@ A mine-clearing puzzle game built with Laravel. Anyone can play straight away; a
 - Three difficulties: Beginner (9×9, 10 mines), Intermediate (16×16, 40 mines), Expert (30×16, 99 mines)
 - Safe first click, flagging (right-click or long-press), and clicking a satisfied number to clear around it
 - Play as a guest with no sign-up
-- Register / log in to appear on the leaderboard
+- Register with just an email address to appear on the leaderboard under a generated nickname
 - A win made as a guest is held in the session and saved to your account when you register or log in
 - Leaderboard of each player's best time per difficulty
+- Daily board: the same mines for everyone each day (UTC), started from a marked cell, with its own leaderboard. Only a first attempt counts; replays are practice
+- Hints: shows a move the visible numbers prove (or a safe cell when they prove nothing), adding 10 seconds each time
+- After a win: the board's 3BV, clicks used and efficiency
+- Flag mode for touch screens, keyboard play, local stats (best time, win rate, streak), generated music and sound effects
 
 ## Requirements
 

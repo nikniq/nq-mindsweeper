@@ -106,6 +106,57 @@ class ExampleTest extends TestCase
             ->assertDontSee('30.00s');
     }
 
+    public function test_daily_board_keeps_only_a_players_first_time_of_the_day(): void
+    {
+        $user = User::factory()->create(['name' => 'Dailyer']);
+        $daily = ['difficulty' => Score::DAILY, 'day' => Score::today()];
+
+        $this->actingAs($user)->postJson('/scores', $daily + ['time_ms' => 50000])->assertCreated();
+        $this->actingAs($user)->postJson('/scores', $daily + ['time_ms' => 9000])
+            ->assertOk()->assertJson(['saved' => false, 'reason' => 'played']);
+
+        $this->assertSame([50000], $user->scores()->pluck('time_ms')->all());
+    }
+
+    public function test_daily_time_for_another_days_board_is_refused(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->postJson('/scores', ['difficulty' => Score::DAILY, 'day' => now()->subDay()->toDateString(), 'time_ms' => 50000])
+            ->assertConflict()->assertJson(['reason' => 'stale']);
+        $this->actingAs($user)
+            ->postJson('/scores', ['difficulty' => Score::DAILY, 'time_ms' => 50000])
+            ->assertConflict();
+
+        $this->assertDatabaseCount('scores', 0);
+    }
+
+    public function test_daily_leaderboard_lists_only_todays_times(): void
+    {
+        $yesterday = User::factory()->create(['name' => 'Yesterdayer']);
+        $today = User::factory()->create(['name' => 'Todayer']);
+        $this->travelTo(now()->subDay(), fn () => $yesterday->scores()->create(['difficulty' => Score::DAILY, 'time_ms' => 10000]));
+        $today->scores()->create(['difficulty' => Score::DAILY, 'time_ms' => 20000]);
+
+        $this->get('/leaderboard?difficulty=daily')
+            ->assertSee('Todayer')->assertSee('20.00s')
+            ->assertDontSee('Yesterdayer');
+    }
+
+    public function test_guest_daily_time_is_claimed_only_on_the_day_it_was_set(): void
+    {
+        $daily = ['difficulty' => Score::DAILY, 'day' => Score::today()];
+        $this->postJson('/scores', $daily + ['time_ms' => 40000])->assertStatus(202);
+        $this->postJson('/scores', $daily + ['time_ms' => 5000])->assertOk()->assertJson(['reason' => 'played']);
+
+        $this->travelTo(now()->addDay());
+        $this->post('/register', ['email' => 'late@example.com']);
+
+        $this->assertAuthenticated();
+        $this->assertDatabaseCount('scores', 0);
+    }
+
     public function test_invalid_scores_and_bad_logins_are_rejected(): void
     {
         $this->postJson('/scores', ['difficulty' => 'godmode', 'time_ms' => 0])

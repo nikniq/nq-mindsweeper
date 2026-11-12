@@ -157,6 +157,9 @@ button.link:hover { color: var(--text); }
 .cell.open { background: var(--cell-open); cursor: default; animation: open .16s ease-out backwards; }
 .cell.open[class*=" n"] { cursor: pointer; }
 .cell.hint { background: var(--cell-hover); box-shadow: inset 0 0 0 2px var(--accent); }
+.cell.start { box-shadow: inset 0 0 0 2px var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+.cell.hint-safe { box-shadow: inset 0 0 0 3px var(--good); background: rgba(95, 211, 154, .35); }
+.cell.hint-mine { box-shadow: inset 0 0 0 3px var(--flag); background: rgba(255, 180, 84, .3); }
 .cell.flag::after { content: "⚑"; color: var(--flag); animation: pop .15s ease-out; }
 .cell.mine { background: var(--cell-open); animation: open .2s ease-out backwards; }
 .cell.mine::after { content: "✹"; color: var(--text); }
@@ -180,9 +183,13 @@ button.link:hover { color: var(--text); }
 .result.lost { border-color: var(--bad); }
 .result #result-text { font-weight: 600; }
 
+.tip { max-width: 560px; margin: 0; padding: 6px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); font-size: .9rem; text-align: center; }
+.toggle small { color: var(--muted); }
+.result .detail { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
 .stats { margin: 0; color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; text-align: center; }
 
 @keyframes open { from { background: var(--cell); color: transparent; transform: scale(.82); } }
+@keyframes pulse { 50% { background: var(--accent); } }
 @keyframes pop { from { transform: scale(1.6); } }
 @keyframes shake {
     25% { transform: translateX(-5px); }

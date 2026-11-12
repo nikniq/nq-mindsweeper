@@ -14,11 +14,18 @@
     const flagModeBtn = document.getElementById('flag-mode');
     const musicBtn = document.getElementById('music');
     const soundBtn = document.getElementById('sound');
+    const hintBtn = document.getElementById('hint');
+    const tipEl = document.getElementById('tip');
+    const resultDetail = document.getElementById('result-detail');
+    const resultShare = document.getElementById('result-share');
+    const shareBtn = document.getElementById('share');
     const audio = window.GameAudio;
+    const DAILY = 'daily', DAY = root.dataset.day;
+    const HINT_PENALTY_MS = 10000;
     const csrf = document.querySelector('meta[name="csrf-token"]').content;
 
     const HIDDEN = 0, REVEALED = 1, FLAGGED = 2;
-    const MAX_CELL = 32, MIN_CELL = 24, GAP = 2;
+    const MAX_CELL = 32, MIN_CELL = 18, GAP = 2;
 
     function load(key, fallback) {
         try {
@@ -46,6 +53,28 @@
 
     let cols, rows, mineCount, mines, adjacent, state, cells;
     let placed, over, revealedCount, flagCount, startedAt, tick, focusIdx;
+    // startIdx: the cell a daily board must be opened from. ranked: whether
+    // this run counts (a daily board only counts the first time it is played).
+    let startIdx, ranked, penaltyMs, hintsUsed, clicks, shareText;
+
+    // Small seeded generator, so a given day produces the same board for everyone.
+    function seededRandom(text) {
+        let seed = 2166136261;
+        for (const ch of text) seed = Math.imul(seed ^ ch.charCodeAt(0), 16777619);
+        return () => {
+            seed = (seed + 0x6D2B79F5) | 0;
+            let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    function setTip(text) {
+        tipEl.textContent = text;
+        tipEl.hidden = !text;
+    }
+
+    const elapsed = () => performance.now() - startedAt + penaltyMs;
 
     function record() {
         const s = stats[difficulty] || {};
@@ -73,6 +102,11 @@
 
     // Returns true when the win beat the previous best time.
     function recordResult(won, ms) {
+        if (difficulty === DAILY) {
+            // Replaying a board you have already seen says nothing about your play.
+            if (!ranked) return false;
+            save('daily', { day: DAY, won, ms: won ? ms : null });
+        }
         const s = record();
         s.played++;
         let isBest = false;
@@ -105,7 +139,25 @@
         revealedCount = 0;
         flagCount = 0;
         startedAt = null;
+        penaltyMs = 0;
+        hintsUsed = 0;
+        clicks = 0;
+        ranked = true;
+        startIdx = null;
         clearInterval(tick);
+
+        if (difficulty === DAILY) {
+            startIdx = Math.floor(seededRandom(DAY + ':start')() * n);
+            const played = load('daily', null);
+            ranked = !played || played.day !== DAY;
+            setTip(ranked
+                ? `Today's board (${DAY}) is the same for everyone. Start on the marked cell. Only your first attempt counts.`
+                : 'You have already played today\'s board, so this run is practice and is not ranked. A new board arrives at midnight UTC.');
+        } else {
+            setTip('');
+        }
+        resultDetail.hidden = true;
+        resultShare.hidden = true;
 
         timerEl.textContent = '0.0';
         minesLeftEl.textContent = mineCount;
@@ -115,7 +167,7 @@
 
         boardEl.style.setProperty('--cols', cols);
         boardEl.classList.remove('over', 'won', 'lost');
-        focusIdx = Math.floor(rows / 2) * cols + Math.floor(cols / 2);
+        focusIdx = startIdx ?? Math.floor(rows / 2) * cols + Math.floor(cols / 2);
         const frag = document.createDocumentFragment();
         cells = [];
         for (let i = 0; i < n; i++) {
@@ -129,6 +181,7 @@
             cells.push(b);
             frag.appendChild(b);
         }
+        if (startIdx !== null) cells[startIdx].classList.add('start');
         boardEl.replaceChildren(frag);
         fitBoard();
         if (hadFocus) cells[focusIdx].focus();
@@ -169,11 +222,15 @@
 
     // Mines are laid after the first click so it always opens a clear area.
     function placeMines(safe) {
+        const random = difficulty === DAILY ? seededRandom(DAY + ':mines') : Math.random;
+        // Opening the daily board uses up the attempt, win or lose.
+        if (difficulty === DAILY && ranked) save('daily', { day: DAY, won: false, ms: null });
+        cells[safe].classList.remove('start');
         const banned = new Set([safe, ...neighbours(safe)]);
         const pool = [];
         for (let i = 0; i < cols * rows; i++) if (!banned.has(i)) pool.push(i);
         for (let k = 0; k < mineCount; k++) {
-            const j = k + Math.floor(Math.random() * (pool.length - k));
+            const j = k + Math.floor(random() * (pool.length - k));
             [pool[k], pool[j]] = [pool[j], pool[k]];
             mines[pool[k]] = 1;
         }
@@ -183,7 +240,7 @@
         placed = true;
         startedAt = performance.now();
         tick = setInterval(() => {
-            timerEl.textContent = ((performance.now() - startedAt) / 1000).toFixed(1);
+            timerEl.textContent = (elapsed() / 1000).toFixed(1);
         }, 100);
     }
 
@@ -220,6 +277,7 @@
         const flagged = state[i] === FLAGGED;
         state[i] = flagged ? HIDDEN : FLAGGED;
         flagCount += flagged ? -1 : 1;
+        if (placed) clicks++;
         cells[i].classList.toggle('flag', !flagged);
         cells[i].setAttribute('aria-label', flagged ? 'Hidden' : 'Flagged');
         minesLeftEl.textContent = mineCount - flagCount;
@@ -241,6 +299,7 @@
             audio.play('deny');
             return;
         }
+        if (nbs.some((nb) => state[nb] === HIDDEN)) clicks++;
         for (const nb of nbs) {
             if (over) break;
             if (state[nb] === HIDDEN) reveal(nb);
@@ -251,7 +310,7 @@
         over = true;
         clearInterval(tick);
         boardEl.classList.add('over', kind);
-        const ms = Math.max(1, Math.round(performance.now() - startedAt));
+        const ms = Math.max(1, Math.round(elapsed()));
         timerEl.textContent = (ms / 1000).toFixed(2);
         return ms;
     }
@@ -287,11 +346,127 @@
         minesLeftEl.textContent = 0;
         audio.play('win');
         const time = (ms / 1000).toFixed(2);
-        const summary = recordResult(true, ms)
-            ? `Cleared in ${time}s. New personal best!`
-            : `Cleared in ${time}s.`;
+        const hints = hintsUsed
+            ? ` (including ${hintsUsed} ${hintsUsed === 1 ? 'hint' : 'hints'}, +${(hintsUsed * HINT_PENALTY_MS) / 1000}s)`
+            : '';
+        let summary = `Cleared in ${time}s${hints}.`;
+        const practice = difficulty === DAILY && !ranked;
+        if (practice) summary += ' Practice run, not ranked.';
+        else if (recordResult(true, ms) && difficulty !== DAILY) summary += ' New personal best!';
         showResult('won', summary);
-        submit(ms, summary);
+
+        // 3BV is the fewest clicks the board could be cleared in.
+        const needed = minimumClicks();
+        resultDetail.textContent = `Board difficulty (3BV) ${needed} · ${(needed / (ms / 1000)).toFixed(2)} per second · `
+            + `${clicks} clicks · ${Math.min(100, Math.round((needed / clicks) * 100))}% efficient`;
+        resultDetail.hidden = false;
+
+        if (difficulty === DAILY && ranked) {
+            shareText = `${root.dataset.app} daily ${DAY}: cleared in ${time}s${hints}. ${location.origin}`;
+            shareBtn.textContent = 'Share result';
+            resultShare.hidden = false;
+        }
+        if (!practice) submit(ms, summary);
+    }
+
+    function minimumClicks() {
+        const n = cols * rows, seen = new Uint8Array(n);
+        let count = 0;
+        // Each connected empty area opens with one click, numbers on its edge included.
+        for (let i = 0; i < n; i++) {
+            if (mines[i] || adjacent[i] || seen[i]) continue;
+            count++;
+            const stack = [i];
+            seen[i] = 1;
+            while (stack.length) {
+                for (const nb of neighbours(stack.pop())) {
+                    if (seen[nb]) continue;
+                    seen[nb] = 1;
+                    if (!adjacent[nb]) stack.push(nb);
+                }
+            }
+        }
+        for (let i = 0; i < n; i++) if (!mines[i] && !seen[i]) count++;
+        return count;
+    }
+
+    // Work out a move for the hint button. It uses only what the visible
+    // numbers prove; when they prove nothing it falls back to a cell that
+    // happens to be safe.
+    function findHint() {
+        const n = cols * rows;
+        for (let i = 0; i < n; i++) {
+            if (state[i] === FLAGGED && !mines[i]) return { i, kind: 'wrong' };
+        }
+
+        const mine = new Uint8Array(n), safe = new Uint8Array(n);
+        for (let changed = true; changed;) {
+            changed = false;
+            for (let i = 0; i < n; i++) {
+                if (state[i] !== REVEALED || !adjacent[i]) continue;
+                const hidden = neighbours(i).filter((nb) => state[nb] !== REVEALED);
+                const known = hidden.filter((nb) => mine[nb]).length;
+                const rest = hidden.filter((nb) => !mine[nb] && !safe[nb]);
+                if (!rest.length) continue;
+                if (adjacent[i] - known === rest.length) {
+                    rest.forEach((nb) => { mine[nb] = 1; });
+                    changed = true;
+                } else if (adjacent[i] === known) {
+                    rest.forEach((nb) => { safe[nb] = 1; });
+                    changed = true;
+                }
+            }
+        }
+        for (let i = 0; i < n; i++) if (safe[i]) return { i, kind: 'safe' };
+        for (let i = 0; i < n; i++) if (mine[i] && state[i] !== FLAGGED) return { i, kind: 'mine' };
+
+        let fallback = null;
+        for (let i = 0; i < n; i++) {
+            if (state[i] !== HIDDEN || mines[i]) continue;
+            if (neighbours(i).some((nb) => state[nb] === REVEALED)) return { i, kind: 'guess' };
+            fallback ??= i;
+        }
+        return fallback === null ? null : { i: fallback, kind: 'guess' };
+    }
+
+    const HINT_TEXT = {
+        wrong: 'That flag is wrong: there is no mine under it.',
+        safe: 'The highlighted cell is safe. The numbers around it prove it.',
+        mine: 'The highlighted cell must be a mine. Flag it.',
+        guess: 'The numbers do not settle anything here, so here is a cell that is safe.',
+    };
+
+    function mark(i, cls, ms = 3000) {
+        const el = cells[i];
+        el.classList.add(cls);
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        setTimeout(() => el.classList.remove(cls), ms);
+    }
+
+    function hint() {
+        if (over) return;
+        if (!placed) {
+            if (startIdx !== null) mark(startIdx, 'hint');
+            return setTip(startIdx !== null ? 'Start on the marked cell.' : 'Make your first move, then ask for a hint.');
+        }
+        const found = findHint();
+        if (!found) return;
+        hintsUsed++;
+        penaltyMs += HINT_PENALTY_MS;
+        mark(found.i, found.kind === 'safe' || found.kind === 'guess' ? 'hint-safe' : 'hint-mine');
+        setTip(`${HINT_TEXT[found.kind]} (+${HINT_PENALTY_MS / 1000}s)`);
+        audio.play('reveal', 5);
+    }
+
+    async function share() {
+        try {
+            if (navigator.share) {
+                await navigator.share({ text: shareText });
+            } else {
+                await navigator.clipboard.writeText(shareText);
+                shareBtn.textContent = 'Copied';
+            }
+        } catch (e) { /* cancelled or not permitted */ }
     }
 
     function showResult(kind, text) {
@@ -309,12 +484,16 @@
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': csrf,
                 },
-                body: JSON.stringify({ difficulty, time_ms: ms }),
+                body: JSON.stringify({ difficulty, time_ms: ms, day: difficulty === DAILY ? DAY : null }),
             });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
+            if (!res.ok && res.status !== 409) throw new Error('HTTP ' + res.status);
             const data = await res.json();
             if (data.saved) {
                 resultText.textContent = `${summary} Saved to the leaderboard.`;
+            } else if (data.reason === 'stale') {
+                resultText.textContent = `${summary} A new daily board has started since you loaded the page, so this time was not saved. Reload to play it.`;
+            } else if (data.reason === 'played') {
+                resultText.textContent = `${summary} You already have a time for today's board, so this one was not saved.`;
             } else {
                 resultGuest.hidden = false;
             }
@@ -374,7 +553,14 @@
         if (state[i] === REVEALED) return chord(i);
         if (flagMode) return toggleFlag(i);
         if (state[i] === FLAGGED) return;
-        if (!placed) placeMines(i);
+        if (!placed) {
+            if (startIdx !== null && i !== startIdx) {
+                mark(startIdx, 'hint', 400);
+                return audio.play('deny');
+            }
+            placeMines(i);
+        }
+        clicks++;
         reveal(i);
     });
 
@@ -418,6 +604,7 @@
         if (key === 'n' || key === 'r') return newGame();
         if (key === 'f') return setFlagMode(!flagMode);
         if (key === 'm') return setMusic(!audio.music);
+        if (key === 'h') return hint();
         const choice = Object.keys(DIFFICULTIES)[Number(key) - 1];
         if (choice) setDifficulty(choice);
     });
@@ -435,6 +622,8 @@
     });
     document.getElementById('new-game').addEventListener('click', newGame);
     flagModeBtn.addEventListener('click', () => setFlagMode(!flagMode));
+    hintBtn.addEventListener('click', hint);
+    shareBtn.addEventListener('click', share);
 
     if (audio.supported) {
         musicBtn.setAttribute('aria-pressed', audio.music);
