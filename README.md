@@ -13,6 +13,8 @@ A mine-clearing puzzle game built with Laravel. Anyone can play straight away; a
 - Daily board: the same mines for everyone each day (UTC), started from a marked cell, with its own leaderboard. Only a first attempt counts; replays are practice
 - Hints: shows a move the visible numbers prove (or a safe cell when they prove nothing), adding 10 seconds each time
 - After a win: the board's 3BV, clicks used and efficiency
+- No-guessing boards: an optional mode where every board can be cleared by deduction alone (unranked)
+- Daily streak and a countdown to the next daily board; confetti on a win
 - Flag mode for touch screens, keyboard play, local stats (best time, win rate, streak), generated music and sound effects
 
 ## Requirements

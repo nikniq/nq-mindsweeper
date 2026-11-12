@@ -28,6 +28,9 @@
             <button type="button" id="hint" class="toggle" title="Show a safe move, at a cost of 10 seconds (H)">
                 <span aria-hidden="true">💡</span> Hint <small>+10s</small>
             </button>
+            <button type="button" id="logic" class="toggle" aria-pressed="false" title="Boards that can always be solved without guessing; not ranked (G)">
+                <span aria-hidden="true">🧠</span> No guessing
+            </button>
             <button type="button" id="music" class="toggle" aria-pressed="false" title="Background music (M)">
                 <span aria-hidden="true">♪</span> Music
             </button>
@@ -57,7 +60,7 @@
 
         <p class="help">
             Click to reveal. Right-click or long-press to flag, or switch on flag mode. Click a number with all its flags placed to clear around it.
-            Keys: arrows move, Space reveals, F flags, H gives a hint (adds 10 seconds), N starts a new game, M toggles music, 1–4 change difficulty.
+            Keys: arrows move, Space reveals, F flags, H gives a hint (adds 10 seconds), G switches no-guessing boards, N starts a new game, M toggles music, 1–4 change difficulty.
             @guest No account needed to play. @endguest
         </p>
     </section>

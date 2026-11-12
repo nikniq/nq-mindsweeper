@@ -15,6 +15,7 @@
     const musicBtn = document.getElementById('music');
     const soundBtn = document.getElementById('sound');
     const hintBtn = document.getElementById('hint');
+    const logicBtn = document.getElementById('logic');
     const tipEl = document.getElementById('tip');
     const resultDetail = document.getElementById('result-detail');
     const resultShare = document.getElementById('result-share');
@@ -56,6 +57,27 @@
     // startIdx: the cell a daily board must be opened from. ranked: whether
     // this run counts (a daily board only counts the first time it is played).
     let startIdx, ranked, penaltyMs, hintsUsed, clicks, shareText;
+    // logicGame: this board is built so it never needs a guess. building: such
+    // a board is still being searched for. gameId tells a stale search to stop.
+    let logicMode = load('logic', false) === true, logicGame, building, gameId = 0, nbCache;
+
+    const LOGIC_TIP = 'No-guessing board: every move can be worked out from the numbers. These games are not ranked.';
+
+    function previousDay(day) {
+        return new Date(Date.parse(day + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+    }
+
+    // Consecutive days on which the daily board was won at the first attempt.
+    function dailyStreak() {
+        const s = load('dailyStreak', null);
+        return s && (s.last === DAY || s.last === previousDay(DAY)) ? s.count : 0;
+    }
+
+    function untilNextDaily() {
+        const now = new Date();
+        const minutes = Math.ceil((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1) - now) / 60000);
+        return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+    }
 
     // Small seeded generator, so a given day produces the same board for everyone.
     function seededRandom(text) {
@@ -102,10 +124,12 @@
 
     // Returns true when the win beat the previous best time.
     function recordResult(won, ms) {
+        // Replays of the daily board and no-guessing boards say nothing
+        // about ordinary play, so they stay out of the record.
+        if (!ranked) return false;
         if (difficulty === DAILY) {
-            // Replaying a board you have already seen says nothing about your play.
-            if (!ranked) return false;
             save('daily', { day: DAY, won, ms: won ? ms : null });
+            save('dailyStreak', { last: DAY, count: won ? dailyStreak() + 1 : 0 });
         }
         const s = record();
         s.played++;
@@ -144,15 +168,37 @@
         clicks = 0;
         ranked = true;
         startIdx = null;
+        building = false;
+        gameId++;
+        logicGame = logicMode && difficulty !== DAILY;
         clearInterval(tick);
+
+        nbCache = [];
+        for (let i = 0; i < n; i++) {
+            const x = i % cols, y = (i - x) / cols, out = [];
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    if (!dx && !dy) continue;
+                    const nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) out.push(ny * cols + nx);
+                }
+            }
+            nbCache.push(out);
+        }
+        logicBtn.disabled = difficulty === DAILY;
 
         if (difficulty === DAILY) {
             startIdx = Math.floor(seededRandom(DAY + ':start')() * n);
             const played = load('daily', null);
             ranked = !played || played.day !== DAY;
+            const streak = dailyStreak();
+            const streakText = streak > 0 ? ` Daily streak: ${streak}.` : '';
             setTip(ranked
-                ? `Today's board (${DAY}) is the same for everyone. Start on the marked cell. Only your first attempt counts.`
-                : 'You have already played today\'s board, so this run is practice and is not ranked. A new board arrives at midnight UTC.');
+                ? `Today's board (${DAY}) is the same for everyone. Start on the marked cell. Only your first attempt counts.${streakText}`
+                : `You have already played today's board, so this run is practice and is not ranked. Next board in ${untilNextDaily()}.${streakText}`);
+        } else if (logicGame) {
+            ranked = false;
+            setTip(LOGIC_TIP);
         } else {
             setTip('');
         }
@@ -203,16 +249,9 @@
         boardEl.style.setProperty('--size', size + 'px');
     }
 
+    // The returned array is shared; callers must not change it.
     function neighbours(i) {
-        const x = i % cols, y = (i - x) / cols, out = [];
-        for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-                if (!dx && !dy) continue;
-                const nx = x + dx, ny = y + dy;
-                if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) out.push(ny * cols + nx);
-            }
-        }
-        return out;
+        return nbCache[i];
     }
 
     function distance(a, b) {
@@ -221,27 +260,148 @@
     }
 
     // Mines are laid after the first click so it always opens a clear area.
-    function placeMines(safe) {
-        const random = difficulty === DAILY ? seededRandom(DAY + ':mines') : Math.random;
-        // Opening the daily board uses up the attempt, win or lose.
-        if (difficulty === DAILY && ranked) save('daily', { day: DAY, won: false, ms: null });
-        cells[safe].classList.remove('start');
+    function layMines(safe, random) {
+        const n = cols * rows, laid = new Uint8Array(n), counts = new Uint8Array(n);
         const banned = new Set([safe, ...neighbours(safe)]);
         const pool = [];
-        for (let i = 0; i < cols * rows; i++) if (!banned.has(i)) pool.push(i);
+        for (let i = 0; i < n; i++) if (!banned.has(i)) pool.push(i);
         for (let k = 0; k < mineCount; k++) {
             const j = k + Math.floor(random() * (pool.length - k));
             [pool[k], pool[j]] = [pool[j], pool[k]];
-            mines[pool[k]] = 1;
+            laid[pool[k]] = 1;
         }
-        for (let i = 0; i < cols * rows; i++) {
-            adjacent[i] = neighbours(i).reduce((sum, nb) => sum + mines[nb], 0);
+        for (let i = 0; i < n; i++) {
+            for (const nb of neighbours(i)) counts[i] += laid[nb];
         }
+        return { mines: laid, adjacent: counts };
+    }
+
+    function begin(layout, first) {
+        ({ mines, adjacent } = layout);
+        // Opening the daily board uses up the attempt, win or lose.
+        if (difficulty === DAILY && ranked) save('daily', { day: DAY, won: false, ms: null });
+        cells[first].classList.remove('start');
         placed = true;
         startedAt = performance.now();
         tick = setInterval(() => {
             timerEl.textContent = (elapsed() / 1000).toFixed(1);
         }, 100);
+        clicks++;
+        reveal(first);
+    }
+
+    function firstClick(i) {
+        if (!logicGame) {
+            return begin(layMines(i, difficulty === DAILY ? seededRandom(DAY + ':mines') : Math.random), i);
+        }
+        // Keep laying boards until one can be cleared by deduction alone,
+        // working in short slices so the page stays responsive.
+        building = true;
+        setTip('Building a board that needs no guessing…');
+        const game = gameId;
+        (function search() {
+            if (game !== gameId) return;
+            const until = performance.now() + 25;
+            do {
+                const layout = layMines(i, Math.random);
+                if (solvable(layout, i)) {
+                    building = false;
+                    setTip(LOGIC_TIP);
+                    return begin(layout, i);
+                }
+            } while (performance.now() < until);
+            setTimeout(search, 0);
+        })();
+    }
+
+    // Marks in `mine` and `safe` every hidden cell whose contents the revealed
+    // numbers prove, and returns whether anything new was learnt. Two rules:
+    // a number whose remaining mines equal its remaining cells (or zero), and
+    // a number whose cells are a subset of another's.
+    function deduce(counts, revealed, mine, safe) {
+        const n = cols * rows;
+        let progress = false;
+        for (let changed = true; changed;) {
+            changed = false;
+            const open = new Array(n);
+            for (let i = 0; i < n; i++) {
+                if (!revealed[i] || !counts[i]) continue;
+                let known = 0;
+                const rest = [];
+                for (const nb of nbCache[i]) {
+                    if (revealed[nb]) continue;
+                    if (mine[nb]) known++;
+                    else if (!safe[nb]) rest.push(nb);
+                }
+                if (!rest.length) continue;
+                const need = counts[i] - known;
+                if (need === rest.length) {
+                    for (const c of rest) mine[c] = 1;
+                    changed = true;
+                } else if (need === 0) {
+                    for (const c of rest) safe[c] = 1;
+                    changed = true;
+                } else {
+                    open[i] = { rest, need };
+                }
+            }
+            if (changed) { progress = true; continue; }
+
+            for (let i = 0; i < n; i++) {
+                const a = open[i];
+                if (!a) continue;
+                const x = i % cols, y = (i - x) / cols;
+                for (let dy = -2; dy <= 2; dy++) {
+                    for (let dx = -2; dx <= 2; dx++) {
+                        const nx = x + dx, ny = y + dy;
+                        if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+                        const b = open[ny * cols + nx];
+                        if (!b || b.rest.length <= a.rest.length) continue;
+                        if (!a.rest.every((c) => b.rest.includes(c))) continue;
+                        const extra = b.rest.filter((c) => !a.rest.includes(c) && !mine[c] && !safe[c]);
+                        const need = b.need - a.need - b.rest.filter((c) => !a.rest.includes(c) && mine[c]).length;
+                        if (!extra.length) continue;
+                        if (need === 0) {
+                            for (const c of extra) safe[c] = 1;
+                            changed = true;
+                        } else if (need === extra.length) {
+                            for (const c of extra) mine[c] = 1;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if (changed) progress = true;
+        }
+        return progress;
+    }
+
+    // Can the board be cleared from `start` using only deduce()?
+    function solvable(layout, start) {
+        const n = cols * rows, target = n - mineCount;
+        const revealed = new Uint8Array(n), mine = new Uint8Array(n);
+        let opened = 0;
+        const open = (from) => {
+            const stack = [from];
+            while (stack.length) {
+                const i = stack.pop();
+                if (revealed[i]) continue;
+                revealed[i] = 1;
+                opened++;
+                if (!layout.adjacent[i]) stack.push(...nbCache[i]);
+            }
+        };
+        open(start);
+        while (opened < target) {
+            const safe = new Uint8Array(n);
+            if (!deduce(layout.adjacent, revealed, mine, safe)) return false;
+            let any = false;
+            for (let i = 0; i < n; i++) {
+                if (safe[i]) { open(i); any = true; }
+            }
+            if (!any) return false;
+        }
+        return true;
     }
 
     function reveal(start) {
@@ -273,7 +433,7 @@
     }
 
     function toggleFlag(i) {
-        if (state[i] === REVEALED) return;
+        if (state[i] === REVEALED || building) return;
         const flagged = state[i] === FLAGGED;
         state[i] = flagged ? HIDDEN : FLAGGED;
         flagCount += flagged ? -1 : 1;
@@ -350,8 +510,8 @@
             ? ` (including ${hintsUsed} ${hintsUsed === 1 ? 'hint' : 'hints'}, +${(hintsUsed * HINT_PENALTY_MS) / 1000}s)`
             : '';
         let summary = `Cleared in ${time}s${hints}.`;
-        const practice = difficulty === DAILY && !ranked;
-        if (practice) summary += ' Practice run, not ranked.';
+        const practice = !ranked;
+        if (practice) summary += logicGame ? ' No-guessing board, not ranked.' : ' Practice run, not ranked.';
         else if (recordResult(true, ms) && difficulty !== DAILY) summary += ' New personal best!';
         showResult('won', summary);
 
@@ -367,6 +527,45 @@
             resultShare.hidden = false;
         }
         if (!practice) submit(ms, summary);
+        celebrate();
+    }
+
+    // A short burst of confetti over the page.
+    function celebrate() {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        const canvas = document.createElement('canvas');
+        canvas.className = 'confetti';
+        const w = canvas.width = window.innerWidth, h = canvas.height = window.innerHeight;
+        document.body.appendChild(canvas);
+        const g = canvas.getContext('2d');
+        const colours = ['#7c9cff', '#5fd39a', '#ffb454', '#ff7b7b', '#c792ea', '#5ccfe6'];
+        const box = boardEl.getBoundingClientRect();
+        const bits = Array.from({ length: 140 }, () => ({
+            x: box.left + Math.random() * box.width,
+            y: box.top + box.height * 0.4,
+            vx: (Math.random() - 0.5) * 14,
+            vy: -6 - Math.random() * 10,
+            size: 5 + Math.random() * 6,
+            spin: Math.random() * 6,
+            colour: colours[Math.floor(Math.random() * colours.length)],
+        }));
+        const began = performance.now(), LIFE = 2600;
+        (function frame(now) {
+            const age = now - began;
+            if (age > LIFE) return canvas.remove();
+            g.clearRect(0, 0, w, h);
+            g.globalAlpha = Math.min(1, (LIFE - age) / 600);
+            for (const bit of bits) {
+                bit.vy += 0.35;
+                bit.vx *= 0.99;
+                bit.x += bit.vx;
+                bit.y += bit.vy;
+                bit.spin += 0.2;
+                g.fillStyle = bit.colour;
+                g.fillRect(bit.x, bit.y, bit.size, bit.size * Math.abs(Math.cos(bit.spin)) + 1);
+            }
+            requestAnimationFrame(frame);
+        })(began);
     }
 
     function minimumClicks() {
@@ -400,23 +599,7 @@
         }
 
         const mine = new Uint8Array(n), safe = new Uint8Array(n);
-        for (let changed = true; changed;) {
-            changed = false;
-            for (let i = 0; i < n; i++) {
-                if (state[i] !== REVEALED || !adjacent[i]) continue;
-                const hidden = neighbours(i).filter((nb) => state[nb] !== REVEALED);
-                const known = hidden.filter((nb) => mine[nb]).length;
-                const rest = hidden.filter((nb) => !mine[nb] && !safe[nb]);
-                if (!rest.length) continue;
-                if (adjacent[i] - known === rest.length) {
-                    rest.forEach((nb) => { mine[nb] = 1; });
-                    changed = true;
-                } else if (adjacent[i] === known) {
-                    rest.forEach((nb) => { safe[nb] = 1; });
-                    changed = true;
-                }
-            }
-        }
+        deduce(adjacent, state.map((value) => (value === REVEALED ? 1 : 0)), mine, safe);
         for (let i = 0; i < n; i++) if (safe[i]) return { i, kind: 'safe' };
         for (let i = 0; i < n; i++) if (mine[i] && state[i] !== FLAGGED) return { i, kind: 'mine' };
 
@@ -444,7 +627,7 @@
     }
 
     function hint() {
-        if (over) return;
+        if (over || building) return;
         if (!placed) {
             if (startIdx !== null) mark(startIdx, 'hint');
             return setTip(startIdx !== null ? 'Start on the marked cell.' : 'Make your first move, then ask for a hint.');
@@ -508,6 +691,16 @@
         boardEl.classList.toggle('flagging', on);
     }
 
+    function setLogicMode(on) {
+        if (difficulty === DAILY) return;
+        logicMode = on;
+        save('logic', on);
+        logicBtn.setAttribute('aria-pressed', on);
+        // Never throw away a game that is under way.
+        if (placed && !over) setTip(`No guessing is ${on ? 'on' : 'off'} from your next game.`);
+        else newGame();
+    }
+
     function setMusic(on) {
         audio.setMusic(on);
         musicBtn.setAttribute('aria-pressed', audio.music);
@@ -549,7 +742,7 @@
     boardEl.addEventListener('click', (e) => {
         if (suppressClick) { suppressClick = false; return; }
         const i = cellIndex(e.target);
-        if (i === null || over) return;
+        if (i === null || over || building) return;
         if (state[i] === REVEALED) return chord(i);
         if (flagMode) return toggleFlag(i);
         if (state[i] === FLAGGED) return;
@@ -558,7 +751,7 @@
                 mark(startIdx, 'hint', 400);
                 return audio.play('deny');
             }
-            placeMines(i);
+            return firstClick(i);
         }
         clicks++;
         reveal(i);
@@ -605,6 +798,7 @@
         if (key === 'f') return setFlagMode(!flagMode);
         if (key === 'm') return setMusic(!audio.music);
         if (key === 'h') return hint();
+        if (key === 'g') return setLogicMode(!logicMode);
         const choice = Object.keys(DIFFICULTIES)[Number(key) - 1];
         if (choice) setDifficulty(choice);
     });
@@ -623,6 +817,8 @@
     document.getElementById('new-game').addEventListener('click', newGame);
     flagModeBtn.addEventListener('click', () => setFlagMode(!flagMode));
     hintBtn.addEventListener('click', hint);
+    logicBtn.setAttribute('aria-pressed', logicMode);
+    logicBtn.addEventListener('click', () => setLogicMode(!logicMode));
     shareBtn.addEventListener('click', share);
 
     if (audio.supported) {
