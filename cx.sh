@@ -9,15 +9,18 @@
 # ⚠ Runs on your LOCAL machine only — never copy this to the server.
 #   Its counterpart on the server is deploy.sh (pull + migrate + caches).
 #
-# Requires a vars.sh next to it defining REMOTE, PROJECT, APP_SSH, etc.
-# See vars.sh.example. vars.sh is gitignored because it holds host and
-# account details.
+# Configure it in the Settings block just below this header (host, user,
+# project). Any setting can also be passed in the environment.
+#
+# Version 1.2
+# - no vars.sh: settings live in a block at the top of this file, each
+#   overridable from the environment
 #
 # Version 1.1
 # - runs from any directory (it cds to its own location first)
 # - an option given on the command line no longer clears the screen or
 #   prints the whole menu first; -h prints the menu and exits
-# - vars.sh is checked for the settings every option depends on
+# - refuses to contact the server while the settings are still placeholders
 # - deploy (20) stops on a failed deploy instead of logging it as done, and
 #   health-checks the site afterwards; 21 previews a deploy without running it
 # - new: 21 deploy preview, 75 storage permissions, 76 list database
@@ -37,25 +40,61 @@ if [ -z "$1" ] && [ -t 1 ]; then
   clear
 fi
 
-if [ ! -f ./vars.sh ]; then
-  echo "vars.sh not found next to cx.sh — copy vars.sh.example to vars.sh and fill it in."
-  exit 1
-fi
-source ./vars.sh
+#---------------------------------------------------------------
+# Settings — edit these for your server. There is no separate vars.sh.
+#
+# Each one can also be set from the environment for a single run, which
+# keeps host details out of the repo if you would rather not commit them:
+#
+#   REMOTE_HOST=box.example.com REMOTE_USER=me ./cx.sh 22
+#---------------------------------------------------------------
 
-# Every option leans on these; an empty one turns into a confusing ssh error.
-for required in PROJECT REMOTE REMOTE_HOST APP_SSH APP_SCP; do
-  if [ -z "${!required}" ]; then
-    echo "vars.sh does not set $required — see vars.sh.example."
-    exit 1
-  fi
-done
+# --- Identity ---
+PROJECT="${PROJECT:-example.com}"                  # site name; also the dir under ~/www/ and ~/.ssh/remote/
+REMOTE_USER="${REMOTE_USER:-your-ssh-user}"
+REMOTE_HOST="${REMOTE_HOST:-your-host.example.com}"
+REMOTE_PORT="${REMOTE_PORT:-22}"
+REMOTE="${REMOTE:-$REMOTE_USER@$REMOTE_HOST}"
 
-# Defaults for settings added after vars.sh files were already in use, so
-# an existing vars.sh keeps working without being edited.
-REMOTE_APP="${REMOTE_APP:-www/$PROJECT}"     # app root on the server, relative to ~
-APP_URL="${APP_URL:-https://$PROJECT}"       # what option 30 health-checks
-LOG_OUTPUT="${LOG_OUTPUT:-./log/remote.out}"
+# App root on the server, relative to ~. deploy.sh, .env and storage/ live
+# here, and the web server's document root must be its public_html/.
+REMOTE_APP="${REMOTE_APP:-www/$PROJECT}"
+
+# What options 20 and 30 health-check. The public URL, so the check covers
+# DNS and TLS as well as PHP.
+APP_URL="${APP_URL:-https://$PROJECT}"
+
+# Other sites on the same account (shown in the menu banner only).
+if [ -z "${SITES+x}" ]; then SITES=("$PROJECT"); fi
+
+# --- Tooling: kept as variables so flags are added in one place ---
+APP_SSH="${APP_SSH:-ssh -p $REMOTE_PORT}"
+APP_SCP="${APP_SCP:-scp -P $REMOTE_PORT}"
+APP_ANSIBLE="${APP_ANSIBLE:-ansible}"
+
+# --- Ansible (options 04 / 10) ---
+ANSIBLE_USER="${ANSIBLE_USER:-$REMOTE_USER}"
+ANSIBLE_INVENTORY="${ANSIBLE_INVENTORY:-$HOME/.ssh/remote/$PROJECT/inventory.ini}"
+ANSIBLE_CLUSTER="${ANSIBLE_CLUSTER:-all}"
+
+# --- Local paths ---
+LOCAL_SCRIPTS_DEFAULT="${LOCAL_SCRIPTS_DEFAULT:-$HOME/.ssh/remote/default}"   # option 99 copies from here
+LOG_OUTPUT="${LOG_OUTPUT:-./log/remote.out}"                                  # remote output is appended here
+
+#---------------------------------------------------------------
+
+# Everything except the menu, quitting and the local-only option 99 talks
+# to the server, which cannot work until the placeholders are replaced.
+case "${1:-}" in
+  -h|--help|help|qq|99) ;;
+  *)
+    if [ "$REMOTE_HOST" = "your-host.example.com" ] || [ "$REMOTE_USER" = "your-ssh-user" ]; then
+      echo "cx.sh is not configured yet: set PROJECT, REMOTE_USER and REMOTE_HOST in the"
+      echo "Settings block at the top of cx.sh (or pass them in the environment)."
+      exit 1
+    fi
+    ;;
+esac
 
 # This script drives the server from outside. Run on the server it would
 # try to ssh to itself, and option 99 would rewrite the server's dotfiles.

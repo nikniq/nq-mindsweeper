@@ -61,10 +61,10 @@ Two scripts cover routine server work:
 - `deploy.sh` runs **on the server** from the app root. It pulls, installs Composer dependencies when `composer.lock` has changed, migrates, and rebuilds the caches. When migrations are pending it first snapshots the SQLite database to `storage/app/backups/` (newest ten kept) and puts the site in maintenance mode while they run. `./deploy.sh --check` shows what a deploy would change without changing anything.
 - `cx.sh` runs **on your local machine**. It is a menu of maintenance tasks carried out over SSH: deploy and deploy preview, compare the server with local, migration status, caches, health check, logs, artisan commands, permissions, maintenance mode, and downloading the database. Run `./cx.sh` for the menu, `./cx.sh -h` to list the options, or `./cx.sh 20` to run one directly.
 
-`cx.sh` reads its host and account settings from `vars.sh`, which is gitignored:
+`cx.sh` is configured in the Settings block at the top of the file: set `PROJECT`, `REMOTE_USER` and `REMOTE_HOST` (and `REMOTE_PORT` if it is not 22). Any setting can instead be passed in the environment for a single run, which keeps host details out of the repo:
 
 ```sh
-cp vars.sh.example vars.sh   # then fill in the host, user and paths
+REMOTE_HOST=box.example.com REMOTE_USER=me PROJECT=example.com ./cx.sh 22
 ```
 
 For a first deploy, clone the repo on the server, create `.env` from `.env.example` (with `APP_ENV=production` and `APP_DEBUG=false`), run `php artisan key:generate`, point the document root at `public_html/`, then run `./deploy.sh`.

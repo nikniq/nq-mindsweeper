@@ -26,7 +26,6 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 
-# cx.sh local assistant: host/account settings and its logs, never committed
-vars.sh
+# cx.sh local assistant: its logs and downloads, never committed
 /log
 /files
