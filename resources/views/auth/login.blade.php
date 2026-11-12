@@ -20,6 +20,11 @@
             <button type="submit" class="btn">Log in</button>
         </form>
 
+        @if (\App\Http\Controllers\AuthController::googleEnabled())
+            <p class="or"><span>or</span></p>
+            <a class="btn google" href="{{ route('google.redirect') }}">Continue with Google</a>
+        @endif
+
         <p class="sub">New here? <a href="{{ route('register') }}">Register</a></p>
     </section>
 @endsection

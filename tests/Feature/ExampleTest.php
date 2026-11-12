@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Score;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Socialite\Facades\Socialite;
+use Laravel\Socialite\Two\User as SocialiteUser;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
@@ -155,6 +157,59 @@ class ExampleTest extends TestCase
 
         $this->assertAuthenticated();
         $this->assertDatabaseCount('scores', 0);
+    }
+
+    public function test_google_sign_in_creates_a_player_and_saves_a_guest_win(): void
+    {
+        $this->enableGoogle();
+        $this->postJson('/scores', ['difficulty' => 'beginner', 'time_ms' => 9000])->assertStatus(202);
+        Socialite::fake('google', SocialiteUser::fake(['id' => 'g-123', 'email' => 'Ada@Example.com']));
+
+        $this->get('/auth/google/callback')->assertRedirect('/leaderboard');
+
+        $user = User::query()->where('google_id', 'g-123')->sole();
+        $this->assertSame('ada@example.com', $user->email);
+        $this->assertAuthenticatedAs($user);
+        $this->assertDatabaseHas('scores', ['user_id' => $user->id, 'time_ms' => 9000]);
+    }
+
+    public function test_google_sign_in_links_an_existing_account_which_then_needs_google(): void
+    {
+        $this->enableGoogle();
+        $user = User::factory()->create(['password' => null]);
+        Socialite::fake('google', SocialiteUser::fake(['id' => 'g-123', 'email' => $user->email]));
+
+        $this->get('/auth/google/callback')->assertRedirect('/');
+        $this->assertAuthenticatedAs($user);
+        $this->assertSame('g-123', $user->refresh()->google_id);
+        $this->assertDatabaseCount('users', 1);
+
+        $this->post('/logout');
+        $this->post('/login', ['email' => $user->email])->assertSessionHasErrors('email');
+        $this->post('/register', ['email' => $user->email])->assertSessionHasErrors('email');
+        $this->assertGuest();
+    }
+
+    public function test_google_sign_in_is_unavailable_without_credentials(): void
+    {
+        config(['services.google.client_id' => null, 'services.google.client_secret' => null]);
+
+        $this->get('/auth/google')->assertNotFound();
+        $this->get('/auth/google/callback')->assertNotFound();
+        $this->get('/login')->assertOk()->assertDontSee('Continue with Google');
+    }
+
+    public function test_google_button_is_offered_and_redirects_to_google_when_configured(): void
+    {
+        $this->enableGoogle();
+
+        $this->get('/login')->assertSee('Continue with Google');
+        $this->get('/auth/google')->assertRedirectContains('accounts.google.com');
+    }
+
+    private function enableGoogle(): void
+    {
+        config(['services.google.client_id' => 'test-id', 'services.google.client_secret' => 'test-secret']);
     }
 
     public function test_invalid_scores_and_bad_logins_are_rejected(): void

@@ -229,6 +229,9 @@ button.link:hover { color: var(--text); }
     color: var(--text);
     font: inherit;
 }
+.or { display: flex; align-items: center; gap: 12px; margin: 16px 0; color: var(--muted); font-size: .85rem; }
+.or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.btn.google { display: block; text-align: center; background: #fff; color: #1f1f1f !important; }
 .error { color: var(--bad); }
 .form .hint { font-size: .8rem; }
 

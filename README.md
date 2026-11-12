@@ -75,8 +75,18 @@ REMOTE_HOST=box.example.com REMOTE_USER=me PROJECT=example.com ./cx.sh 22
 
 For a first deploy, clone the repo on the server, create `.env` from `.env.example` (with `APP_ENV=production` and `APP_DEBUG=false`), run `php artisan key:generate`, point the document root at `public_html/`, then run `./deploy.sh`.
 
+## Google sign-in
+
+"Continue with Google" appears on the log in and register pages once credentials are set:
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an **OAuth client ID** of type **Web application**.
+2. Add `https://your-domain/auth/google/callback` as an **Authorised redirect URI** (and `http://localhost:8000/auth/google/callback` for local use).
+3. Put the client ID and secret in `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, check `APP_URL` is the site's real address, then run `php artisan config:cache` (a deploy does this).
+
+A Google sign-in with the same email as an existing account is linked to that account, which from then on can only be entered through Google or its password.
+
 ## Known limitations
 
 - Winning times are reported by the browser and are not verified on the server.
-- Registration asks only for an email address, which is not verified, so anyone who knows the address of a password-less account can log in as it. Accounts created earlier with a password still need it.
+- Registration asks only for an email address, which is not verified, so anyone who knows the address of an email-only account can log in as it. Accounts with a password or a Google link are not affected.
 - There is no password reset.
