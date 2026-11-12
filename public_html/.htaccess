@@ -1,3 +1,6 @@
+# Run PHP files with PHP 8.4 on this host.
+AddHandler application/x-httpd-php84 .php .php5 .php4 .php3
+
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
