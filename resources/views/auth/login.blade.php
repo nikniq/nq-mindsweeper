@@ -12,8 +12,8 @@
                 <input type="email" name="email" value="{{ old('email') }}" required autofocus autocomplete="email">
                 @error('email') <span class="error">{{ $message }}</span> @enderror
             </label>
-            <label>Password
-                <input type="password" name="password" required autocomplete="current-password">
+            <label>Password <span class="hint">(leave empty if you registered with only an email)</span>
+                <input type="password" name="password" autocomplete="current-password">
                 @error('password') <span class="error">{{ $message }}</span> @enderror
             </label>
             <label class="check"><input type="checkbox" name="remember" value="1"> Keep me logged in</label>

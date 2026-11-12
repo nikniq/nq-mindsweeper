@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Arr;
 
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'remember_token'])]
@@ -29,6 +30,25 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Pick an unused leaderboard name, such as "Swift Otter", for a player
+     * who registered with only an email address.
+     */
+    public static function generateName(): string
+    {
+        $adjectives = ['Swift', 'Calm', 'Bold', 'Lucky', 'Clever', 'Quiet', 'Brave', 'Steady', 'Sharp', 'Nimble', 'Sly', 'Keen'];
+        $animals = ['Otter', 'Fox', 'Owl', 'Lynx', 'Heron', 'Badger', 'Wren', 'Hare', 'Mole', 'Raven', 'Stoat', 'Finch'];
+
+        $base = Arr::random($adjectives).' '.Arr::random($animals);
+        $name = $base;
+
+        while (self::query()->where('name', $name)->exists()) {
+            $name = $base.' '.random_int(2, 9999);
+        }
+
+        return $name;
     }
 
     public function scores(): HasMany

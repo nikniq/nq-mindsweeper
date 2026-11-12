@@ -12,6 +12,9 @@
     const resultGuest = document.getElementById('result-guest');
     const statsEl = document.getElementById('stats');
     const flagModeBtn = document.getElementById('flag-mode');
+    const musicBtn = document.getElementById('music');
+    const soundBtn = document.getElementById('sound');
+    const audio = window.GameAudio;
     const csrf = document.querySelector('meta[name="csrf-token"]').content;
 
     const HIDDEN = 0, REVEALED = 1, FLAGGED = 2;
@@ -185,6 +188,7 @@
     }
 
     function reveal(start) {
+        const before = revealedCount;
         const stack = [start];
         while (stack.length) {
             const i = stack.pop();
@@ -206,7 +210,9 @@
                 stack.push(...neighbours(i));
             }
         }
-        if (revealedCount === cols * rows - mineCount) win();
+        if (revealedCount === cols * rows - mineCount) return win();
+        if (revealedCount - before > 1) audio.play('flood');
+        else audio.play('reveal', adjacent[start]);
     }
 
     function toggleFlag(i) {
@@ -217,6 +223,7 @@
         cells[i].classList.toggle('flag', !flagged);
         cells[i].setAttribute('aria-label', flagged ? 'Hidden' : 'Flagged');
         minesLeftEl.textContent = mineCount - flagCount;
+        audio.play(flagged ? 'unflag' : 'flag');
     }
 
     // Clicking a satisfied number opens everything around it that isn't flagged.
@@ -231,6 +238,7 @@
                 el.classList.add('hint');
                 setTimeout(() => el.classList.remove('hint'), 220);
             }
+            audio.play('deny');
             return;
         }
         for (const nb of nbs) {
@@ -263,6 +271,7 @@
         }
         cells[hit].classList.add('hit');
         recordResult(false);
+        audio.play('lose');
         const cleared = Math.floor((revealedCount / (cols * rows - mineCount)) * 100);
         showResult('lost', `Boom. That was a mine. You had cleared ${cleared}% of the board.`);
     }
@@ -276,6 +285,7 @@
             }
         }
         minesLeftEl.textContent = 0;
+        audio.play('win');
         const time = (ms / 1000).toFixed(2);
         const summary = recordResult(true, ms)
             ? `Cleared in ${time}s. New personal best!`
@@ -317,6 +327,16 @@
         flagMode = on;
         flagModeBtn.setAttribute('aria-pressed', on);
         boardEl.classList.toggle('flagging', on);
+    }
+
+    function setMusic(on) {
+        audio.setMusic(on);
+        musicBtn.setAttribute('aria-pressed', audio.music);
+    }
+
+    function setSound(on) {
+        audio.setSound(on);
+        soundBtn.setAttribute('aria-pressed', audio.sound);
     }
 
     function cellIndex(target) {
@@ -397,6 +417,7 @@
         const key = e.key.toLowerCase();
         if (key === 'n' || key === 'r') return newGame();
         if (key === 'f') return setFlagMode(!flagMode);
+        if (key === 'm') return setMusic(!audio.music);
         const choice = Object.keys(DIFFICULTIES)[Number(key) - 1];
         if (choice) setDifficulty(choice);
     });
@@ -414,6 +435,20 @@
     });
     document.getElementById('new-game').addEventListener('click', newGame);
     flagModeBtn.addEventListener('click', () => setFlagMode(!flagMode));
+
+    if (audio.supported) {
+        musicBtn.setAttribute('aria-pressed', audio.music);
+        soundBtn.setAttribute('aria-pressed', audio.sound);
+        musicBtn.addEventListener('click', () => setMusic(!audio.music));
+        soundBtn.addEventListener('click', () => setSound(!audio.sound));
+        // Audio may only start from a user gesture, so begin on the first one.
+        for (const type of ['pointerdown', 'keydown']) {
+            document.addEventListener(type, audio.unlock, { once: true, capture: true });
+        }
+    } else {
+        musicBtn.hidden = true;
+        soundBtn.hidden = true;
+    }
 
     if ('ResizeObserver' in window) {
         new ResizeObserver(fitBoard).observe(boardWrap);

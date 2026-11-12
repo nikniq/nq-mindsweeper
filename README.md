@@ -72,4 +72,5 @@ For a first deploy, clone the repo on the server, create `.env` from `.env.examp
 ## Known limitations
 
 - Winning times are reported by the browser and are not verified on the server.
-- There is no password reset or email verification.
+- Registration asks only for an email address, which is not verified, so anyone who knows the address of a password-less account can log in as it. Accounts created earlier with a password still need it.
+- There is no password reset.

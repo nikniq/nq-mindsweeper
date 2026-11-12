@@ -29,17 +29,44 @@ class ExampleTest extends TestCase
         $this->postJson('/scores', ['difficulty' => 'beginner', 'time_ms' => 7000])->assertStatus(202);
         $this->assertDatabaseCount('scores', 0);
 
-        $this->post('/register', [
-            'name' => 'Ada',
-            'email' => 'ada@example.com',
-            'password' => 'correct-horse-9',
-            'password_confirmation' => 'correct-horse-9',
-        ])->assertRedirect('/leaderboard');
+        $this->post('/register', ['email' => 'ada@example.com'])->assertRedirect('/leaderboard');
 
         $this->assertAuthenticated();
         $this->assertDatabaseCount('scores', 1);
         $this->assertDatabaseHas('scores', ['difficulty' => 'beginner', 'time_ms' => 7000]);
-        $this->get('/leaderboard')->assertSee('Ada')->assertSee('7.00s');
+        $name = User::query()->where('email', 'ada@example.com')->value('name');
+        $this->get('/leaderboard')->assertSee($name)->assertSee('7.00s')->assertDontSee('ada@');
+    }
+
+    public function test_email_only_account_logs_in_with_just_its_email(): void
+    {
+        $this->post('/register', ['email' => 'ada@example.com'])->assertRedirect('/');
+        $user = User::query()->where('email', 'ada@example.com')->sole();
+        $this->assertNull($user->password);
+        $this->post('/logout');
+
+        $this->post('/login', ['email' => 'ada@example.com'])->assertRedirect('/');
+        $this->assertAuthenticatedAs($user);
+    }
+
+    public function test_registering_an_email_only_address_again_signs_into_the_same_account(): void
+    {
+        $user = User::factory()->create(['password' => null]);
+
+        $this->post('/register', ['email' => $user->email])->assertRedirect('/');
+
+        $this->assertAuthenticatedAs($user);
+        $this->assertDatabaseCount('users', 1);
+    }
+
+    public function test_account_with_a_password_cannot_be_entered_with_only_its_email(): void
+    {
+        $user = User::factory()->create();
+
+        $this->post('/register', ['email' => $user->email])->assertSessionHasErrors('email');
+        $this->post('/login', ['email' => $user->email])->assertSessionHasErrors('email');
+
+        $this->assertGuest();
     }
 
     public function test_guest_win_is_saved_on_login(): void

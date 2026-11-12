@@ -7,7 +7,6 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 
 class AuthController extends Controller
@@ -20,14 +19,20 @@ class AuthController extends Controller
     public function register(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:30', 'unique:users,name'],
-            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'confirmed', Password::defaults()],
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255'],
         ]);
 
-        $user = User::create($data);
+        $user = User::query()->where('email', $data['email'])->first();
 
-        Auth::login($user);
+        if ($user?->password !== null) {
+            return back()
+                ->withErrors(['email' => 'That email already has an account with a password. Log in instead.'])
+                ->onlyInput('email');
+        }
+
+        $user ??= User::create(['name' => User::generateName(), 'email' => $data['email']]);
+
+        Auth::login($user, remember: true);
         $request->session()->regenerate();
 
         return $this->welcome($user);
@@ -42,10 +47,15 @@ class AuthController extends Controller
     {
         $credentials = $request->validate([
             'email' => ['required', 'string', 'email'],
-            'password' => ['required', 'string'],
+            'password' => ['nullable', 'string'],
         ]);
 
-        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
+        $remember = $request->boolean('remember');
+        $user = User::query()->where('email', $credentials['email'])->first();
+
+        if ($user !== null && $user->password === null) {
+            Auth::login($user, $remember);
+        } elseif (! Auth::attempt(['email' => $credentials['email'], 'password' => $credentials['password'] ?? ''], $remember)) {
             return back()
                 ->withErrors(['email' => 'Those details don\'t match an account.'])
                 ->onlyInput('email');
@@ -72,9 +82,10 @@ class AuthController extends Controller
     {
         if (Score::claimPending($user) > 0) {
             return redirect()->route('leaderboard')
-                ->with('status', 'Your time is on the leaderboard, '.$user->name.'.');
+                ->with('status', 'Your time is on the leaderboard as '.$user->name.'.');
         }
 
-        return redirect()->route('game');
+        return redirect()->route('game')
+            ->with('status', 'You are playing as '.$user->name.'.');
     }
 }
