@@ -20,7 +20,8 @@
 
 body {
     margin: 0;
-    background: var(--bg);
+    min-height: 100vh;
+    background: var(--bg) url("../images/background.svg") center / cover fixed no-repeat;
     color: var(--text);
     font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
