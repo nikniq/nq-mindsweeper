@@ -261,6 +261,29 @@ button.link:hover { color: var(--text); }
     pointer-events: none;
     box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
 }
+.zoom-controls {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: rgba(28, 32, 48, .92);
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+}
+.zoom-controls button {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: 600 1.4rem/1 system-ui, sans-serif;
+    cursor: pointer;
+}
+.zoom-controls button + button { border-top: 1px solid var(--line); }
+.zoom-controls button:hover { background: var(--surface-2); }
 .adv-toast {
     position: absolute;
     top: 12px;

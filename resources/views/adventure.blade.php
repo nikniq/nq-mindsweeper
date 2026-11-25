@@ -43,6 +43,10 @@
             <canvas id="world" class="world" tabindex="0" role="application"
                     aria-label="Adventure map. Arrow keys or WASD walk, Q E Z X walk diagonally, Shift with a direction flags that cell."></canvas>
             <canvas id="adv-minimap" class="minimap" width="128" height="128" aria-hidden="true" title="Map: uncovered ground, shrines (gold), camp (green) and you (white)"></canvas>
+            <div class="zoom-controls">
+                <button type="button" id="adv-zoom-in" aria-label="Zoom in" title="Zoom in (+)">+</button>
+                <button type="button" id="adv-zoom-out" aria-label="Zoom out" title="Zoom out (−)">−</button>
+            </div>
             <p id="adv-toast" class="adv-toast" role="status" aria-live="polite" hidden></p>
             <div id="adv-over" class="adv-over" hidden>
                 <h2>Journey over</h2>
@@ -61,7 +65,7 @@
                 Short on nerve? Scout (40 gold) flags every mine within two cells of you.
             </p>
             <p>
-                Click or tap to walk, even across the map along cells you have uncovered. Right-click or long-press to flag. Drag to look around, scroll to zoom.
+                Click or tap to walk, even across the map along cells you have uncovered. Right-click or long-press to flag. Drag to look around; scroll, pinch or use the + and − buttons to zoom.
                 Keys: arrows or WASD walk, Q E Z X diagonally, Shift with a direction flags, F flag mode, R scout, C find me, + and − zoom, M music.
                 Your journey is saved in this browser.
             </p>

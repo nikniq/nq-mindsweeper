@@ -710,13 +710,33 @@
     }
 
     let press = null;
+    const touches = new Map();   // pointers currently down, for pinch zoom
+    let pinch = null, pinched = false;
+
+    function twoFingers() {
+        const [a, b] = [...touches.values()];
+        return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, distance: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+    }
 
     canvas.addEventListener('pointerdown', (e) => {
         canvas.focus({ preventScroll: true });
         canvas.setPointerCapture(e.pointerId);
+        if (e.pointerType !== 'mouse') touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        // A second finger turns the gesture into a pinch: no tap, no flag.
+        if (touches.size >= 2) {
+            if (press) clearTimeout(press.timer);
+            press = null;
+            pinched = true;
+            const now = twoFingers();
+            pinch = { distance: now.distance, size, x: now.x, y: now.y };
+            return;
+        }
+
         press = { x: e.clientX, y: e.clientY, button: e.button, panned: false, flagged: false, timer: null };
         if (e.pointerType !== 'mouse') {
             press.timer = setTimeout(() => {
+                if (!press) return;
                 press.flagged = true;
                 const [x, y] = cellAtPointer(e);
                 toggleFlag(x, y);
@@ -726,6 +746,20 @@
     });
 
     canvas.addEventListener('pointermove', (e) => {
+        if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (pinch && touches.size >= 2) {
+            const now = twoFingers();
+            // Follow the fingers: zoom around their midpoint and pan as it moves.
+            cam.free = true;
+            cam.x -= (now.x - pinch.x) / size;
+            cam.y -= (now.y - pinch.y) / size;
+            pinch.x = now.x;
+            pinch.y = now.y;
+            zoomAt(pinch.size * (now.distance / pinch.distance), now.x, now.y);
+            return;
+        }
+
         if (!press) return;
         const dx = e.clientX - press.x, dy = e.clientY - press.y;
         if (!press.panned && Math.abs(dx) + Math.abs(dy) < 8) return;
@@ -739,28 +773,75 @@
         dirty = true;
     });
 
+    function liftPointer(e) {
+        touches.delete(e.pointerId);
+        if (touches.size < 2) pinch = null;
+        if (touches.size === 0 && pinched) {
+            pinched = false;
+            saveZoom();
+            return true;
+        }
+        return pinched;
+    }
+
     canvas.addEventListener('pointerup', (e) => {
+        const wasPinch = liftPointer(e);
         if (!press) return;
         clearTimeout(press.timer);
         const done = press;
         press = null;
-        if (done.panned || done.flagged) return;
+        if (wasPinch || done.panned || done.flagged) return;
         const [x, y] = cellAtPointer(e);
         if (done.button === 2 || flagMode) toggleFlag(x, y);
         else if (done.button === 0) goTo(x, y);
     });
-    canvas.addEventListener('pointercancel', () => { if (press) clearTimeout(press.timer); press = null; });
+    canvas.addEventListener('pointercancel', (e) => {
+        liftPointer(e);
+        if (press) clearTimeout(press.timer);
+        press = null;
+    });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    function zoom(factor) {
-        size = Math.max(14, Math.min(56, Math.round(size * factor)));
+    const MIN_SIZE = 12, MAX_SIZE = 64;
+
+    // Zoom so the map point under (clientX, clientY) stays put.
+    function zoomAt(newSize, clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        const ox = clientX - rect.left - rect.width / 2, oy = clientY - rect.top - rect.height / 2;
+        const wx = cam.x + ox / size, wy = cam.y + oy / size;
+        size = Math.max(MIN_SIZE, Math.min(MAX_SIZE, newSize));
+        if (ox || oy) {
+            cam.x = wx - ox / size;
+            cam.y = wy - oy / size;
+            cam.free = true;
+        }
         dirty = true;
     }
 
+    // Zoom around the middle of the view (buttons and keys).
+    function zoom(factor) {
+        const rect = canvas.getBoundingClientRect();
+        zoomAt(size * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+        saveZoom();
+    }
+
+    function saveZoom() {
+        try { localStorage.setItem('adventureZoom', String(Math.round(size))); } catch (e) { /* ignore */ }
+    }
+
+    try {
+        const savedZoom = Number(localStorage.getItem('adventureZoom'));
+        if (savedZoom >= MIN_SIZE && savedZoom <= MAX_SIZE) size = savedZoom;
+    } catch (e) { /* ignore */ }
+
     canvas.addEventListener('wheel', (e) => {
         e.preventDefault();
-        zoom(e.deltaY < 0 ? 1.12 : 1 / 1.12);
+        zoomAt(size * (e.deltaY < 0 ? 1.12 : 1 / 1.12), e.clientX, e.clientY);
+        saveZoom();
     }, { passive: false });
+
+    $('adv-zoom-in').addEventListener('click', () => zoom(1.25));
+    $('adv-zoom-out').addEventListener('click', () => zoom(1 / 1.25));
 
     function centre() {
         cam.free = false;
