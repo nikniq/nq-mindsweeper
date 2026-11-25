@@ -11,11 +11,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 
-#[Fillable(['name', 'email', 'password', 'google_id'])]
+#[Fillable(['name', 'email', 'password', 'google_id', 'nikniq_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
+    /** What a leaderboard name may look like: 2 to 20 plain characters. */
+    public const NAME_PATTERN = '/^[\pL\pN][\pL\pN _.\-]{1,19}$/u';
+
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
@@ -34,11 +38,12 @@ class User extends Authenticatable
 
     /**
      * Whether knowing the email address is enough to sign in. True only for
-     * accounts registered with just an email: no password and no Google link.
+     * accounts registered with just an email: no password and no Google or
+     * nikniq.com link.
      */
     public function signsInWithEmailOnly(): bool
     {
-        return $this->password === null && $this->google_id === null;
+        return $this->password === null && $this->google_id === null && $this->nikniq_id === null;
     }
 
     /**
@@ -58,6 +63,21 @@ class User extends Authenticatable
         }
 
         return $name;
+    }
+
+    /**
+     * Use the name a player already goes by elsewhere when it suits the
+     * leaderboard and is free; otherwise pick one.
+     */
+    public static function availableNameOrGenerated(string $wanted): string
+    {
+        $wanted = Str::squish($wanted);
+
+        if (preg_match(self::NAME_PATTERN, $wanted) === 1 && ! self::query()->where('name', $wanted)->exists()) {
+            return $wanted;
+        }
+
+        return self::generateName();
     }
 
     public function scores(): HasMany

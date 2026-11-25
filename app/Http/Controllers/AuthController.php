@@ -40,7 +40,7 @@ class AuthController extends Controller
         Auth::login($user, remember: true);
         $request->session()->regenerate();
 
-        return $this->welcome($user);
+        return self::welcome($user);
     }
 
     public function showLogin(): View
@@ -72,7 +72,7 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
 
-        return $this->welcome($request->user());
+        return self::welcome($request->user());
     }
 
     /**
@@ -120,7 +120,7 @@ class AuthController extends Controller
         Auth::login($user, remember: true);
         $request->session()->regenerate();
 
-        return $this->welcome($user);
+        return self::welcome($user);
     }
 
     public static function googleEnabled(): bool
@@ -135,7 +135,7 @@ class AuthController extends Controller
     {
         $data = $request->validate([
             'name' => [
-                'required', 'string', 'min:2', 'max:20', 'regex:/^[\pL\pN][\pL\pN _.\-]*$/u',
+                'required', 'string', 'min:2', 'max:20', 'regex:'.User::NAME_PATTERN,
                 Rule::unique('users', 'name')->ignore($request->user()->id),
             ],
         ], [
@@ -153,6 +153,7 @@ class AuthController extends Controller
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+        $request->session()->put('nikniq_optout', true);
 
         return redirect()->route('game');
     }
@@ -161,20 +162,21 @@ class AuthController extends Controller
     {
         return $user->password !== null
             ? 'That email already has an account with a password. Log in with it instead.'
-            : 'That email is linked to a Google account. Use "Continue with Google" instead.';
+            : 'That email is linked to a Google or nikniq.com account. Use the matching "Continue with" button instead.';
     }
 
     /**
      * Save any wins made as a guest, then send the player where it makes sense.
      */
-    private function welcome(User $user): RedirectResponse
+    public static function welcome(User $user, bool $toIntended = false): RedirectResponse
     {
         if (Score::claimPending($user) > 0) {
             return redirect()->route('leaderboard')
                 ->with('status', 'Your time is on the leaderboard as '.$user->name.'.');
         }
 
-        return redirect()->route('game')
-            ->with('status', 'You are playing as '.$user->name.'.');
+        $next = $toIntended ? redirect()->intended(route('game')) : redirect()->route('game');
+
+        return $next->with('status', 'You are playing as '.$user->name.'.');
     }
 }

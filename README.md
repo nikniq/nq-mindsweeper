@@ -16,6 +16,7 @@ A mine-clearing puzzle game built with Laravel. Anyone can play straight away; a
 - No-guessing boards: an optional mode where every board can be cleared by deduction alone (unranked)
 - Daily streak and a countdown to the next daily board; confetti on a win
 - Custom boards of your own width, height and mine count (unranked)
+- Adventure mode: an endless, seeded minefield explored one step at a time with a few hearts. Chests, hearts and shrines to find, a compass to the nearest shrine, mines that thicken the farther you roam, and a journey saved in the browser
 - A saved win tells you your leaderboard position, and you can change your leaderboard name on the leaderboard page
 - Flag mode for touch screens, keyboard play, local stats (best time, win rate, streak), generated music and sound effects
 
@@ -76,6 +77,15 @@ REMOTE_HOST=box.example.com REMOTE_USER=me PROJECT=example.com ./cx.sh 22
 ```
 
 For a first deploy, clone the repo on the server, create `.env` from `.env.example` (with `APP_ENV=production` and `APP_DEBUG=false`), run `php artisan key:generate`, point the document root at `public_html/`, then run `./deploy.sh`.
+
+## nikniq.com sign-in
+
+"Continue with nikniq.com" appears on the log in and register pages once `NIKNIQ_CLIENT_ID` is set. It uses the portal's SSO with PKCE, so a client secret is only needed for a confidential client.
+
+1. On nikniq.com open `/admin/games`, pick this game and copy its client id into `NIKNIQ_CLIENT_ID`.
+2. Under "Allowed redirect URIs" list every `NIKNIQ_REDIRECT_URI` you use (exact match), e.g. `https://your-domain/auth/nikniq/callback` and `http://localhost:8000/auth/nikniq/callback`.
+
+When enabled, a guest's page view takes a quick silent detour to nikniq.com (at most every two minutes) so players already logged in there are signed in automatically. Players who log out here are left alone for the rest of their session. A portal account with the same email as an existing account is linked to it.
 
 ## Google sign-in
 

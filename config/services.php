@@ -34,6 +34,17 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URI', '/auth/google/callback'),
     ],
 
+    /**
+     * Sign in with a nikniq.com account (portal SSO with PKCE). Off until
+     * NIKNIQ_CLIENT_ID is set.
+     */
+    'nikniq' => [
+        'url' => env('NIKNIQ_URL', 'https://nikniq.com'),
+        'client_id' => env('NIKNIQ_CLIENT_ID'),
+        'client_secret' => env('NIKNIQ_CLIENT_SECRET'),
+        'redirect' => env('NIKNIQ_REDIRECT_URI'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

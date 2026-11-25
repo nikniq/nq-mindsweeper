@@ -6,6 +6,8 @@
     <section class="panel">
         <h1>Log in</h1>
 
+        @include('auth.partials.oauth')
+
         <form method="POST" action="{{ route('login') }}" class="form">
             @csrf
             <label>Email
@@ -19,11 +21,6 @@
             <label class="check"><input type="checkbox" name="remember" value="1"> Keep me logged in</label>
             <button type="submit" class="btn">Log in</button>
         </form>
-
-        @if (\App\Http\Controllers\AuthController::googleEnabled())
-            <p class="or"><span>or</span></p>
-            <a class="btn google" href="{{ route('google.redirect') }}">Continue with Google</a>
-        @endif
 
         <p class="sub">New here? <a href="{{ route('register') }}">Register</a></p>
     </section>

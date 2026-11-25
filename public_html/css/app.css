@@ -21,6 +21,8 @@
 body {
     margin: 0;
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     background: var(--bg) url("../images/background.svg") center / cover fixed no-repeat;
     color: var(--text);
     font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -44,7 +46,32 @@ a { color: var(--accent); }
 .site-header form { margin: 0; }
 .who { color: var(--text); font-weight: 600; }
 
-main { padding: 24px 16px 48px; }
+main { flex: 1; padding: 24px 16px 48px; }
+
+.brand-group { display: flex; align-items: center; gap: 10px; }
+.nikniq-home { display: inline-flex; text-decoration: none; }
+.nq-logo { display: inline-block; padding: 1px 6px; border-radius: 5px; background: #f6c945; color: #141a5c; font: 900 .85rem/1.3 system-ui, sans-serif; letter-spacing: -.5px; }
+.nikniq-home:hover .nq-logo { filter: brightness(1.1); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.site-footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 20px 16px 28px;
+    border-top: 1px solid var(--line);
+    background: rgba(18, 20, 28, .85);
+    color: var(--muted);
+    font-size: .85rem;
+    text-align: center;
+}
+.site-footer p { margin: 0; }
+.site-footer nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; }
+.site-footer a { color: var(--muted); text-decoration: none; }
+.site-footer a:hover { color: var(--text); }
+.site-footer .footer-brand { color: var(--text); font-weight: 600; }
+.site-footer .fine { font-size: .75rem; opacity: .8; }
 
 .btn {
     display: inline-block;
@@ -190,6 +217,41 @@ button.link:hover { color: var(--text); }
 .tip { max-width: 560px; margin: 0; padding: 6px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); font-size: .9rem; text-align: center; }
 .toggle small { color: var(--muted); }
 .result .detail { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+/* Adventure */
+.adventure { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.adv-hud { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.adv-hud .readout { min-width: 76px; font-size: 1.1rem; }
+.hearts { color: var(--bad); letter-spacing: .05em; }
+.compass { display: flex; align-items: center; gap: 8px; }
+.compass .arrow { display: inline-block; color: #f6c945; transition: transform .3s; }
+.world-wrap { position: relative; width: min(100%, 1100px); height: min(68vh, 720px); min-height: 340px; }
+.world {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    touch-action: none;
+    cursor: pointer;
+}
+.adv-over {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    width: min(92%, 420px);
+    padding: 20px 22px;
+    border-radius: 12px;
+    border: 1px solid var(--bad);
+    background: rgba(28, 32, 48, .96);
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .5);
+}
+.adv-over[hidden] { display: none; }
+.adv-over h2 { margin: 0 0 8px; }
+.adventure .help { max-width: 760px; }
+.adventure .help p { margin: 0 0 8px; }
+
 .stats { margin: 0; color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; text-align: center; }
 
 @keyframes open { from { background: var(--cell); color: transparent; transform: scale(.82); } }
@@ -232,7 +294,11 @@ button.link:hover { color: var(--text); }
 }
 .or { display: flex; align-items: center; gap: 12px; margin: 16px 0; color: var(--muted); font-size: .85rem; }
 .or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
-.btn.google { display: block; text-align: center; background: #fff; color: #1f1f1f !important; }
+.oauth { display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px; }
+.btn-oauth { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.btn.google { background: #fff; color: #1f1f1f !important; }
+.btn.btn-nikniq { background: #141a5c; color: #fff !important; }
+.btn.btn-nikniq:hover { background: #1c2580; filter: none; }
 .error { color: var(--bad); }
 .form .hint { font-size: .8rem; }
 

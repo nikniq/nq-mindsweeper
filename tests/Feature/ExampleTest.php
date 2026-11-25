@@ -22,6 +22,7 @@ class ExampleTest extends TestCase
     {
         $this->get('/')->assertOk()->assertSee('New game');
         $this->get('/leaderboard')->assertOk()->assertSee('No times yet');
+        $this->get('/adventure')->assertOk()->assertSee('Journey over')->assertSee('js/adventure.js');
     }
 
     public function test_guest_win_is_held_then_saved_on_registration(): void
