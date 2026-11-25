@@ -26,12 +26,13 @@
 
     // Each biome looks different and shifts the mine density a little.
     const BIOMES = [
-        { name: 'Quiet Meadows', tint: '#3a4a60', mod: -0.02 },
-        { name: 'Whispering Forest', tint: '#2f4c44', mod: 0 },
-        { name: 'Sunken Marsh', tint: '#3d4838', mod: 0.02 },
-        { name: 'Frostbound Steppe', tint: '#4b5876', mod: 0.01 },
-        { name: 'Ashen Wastes', tint: '#4d3a3c', mod: 0.045 },
+        { name: 'Quiet Meadows', tint: '#3a4a60', mod: -0.02, detail: 'grass' },
+        { name: 'Whispering Forest', tint: '#2f4c44', mod: 0, detail: 'tree' },
+        { name: 'Sunken Marsh', tint: '#3d4838', mod: 0.02, detail: 'reed' },
+        { name: 'Frostbound Steppe', tint: '#4b5876', mod: 0.01, detail: 'snow' },
+        { name: 'Ashen Wastes', tint: '#4d3a3c', mod: 0.045, detail: 'ember' },
     ];
+    BIOMES.forEach((biome, id) => { biome.id = id; });
 
     // Every map is a place with its own name and character.
     const PLACE_NAMES = [
@@ -269,6 +270,7 @@
         world.farthest = 0;
         world.shrines = new Set();
         world.chunks = new Map();
+        reveals.clear();
         open(0, 0);
         cam.x = 0; cam.y = 0; cam.free = false;
     }
@@ -327,6 +329,9 @@
             const [cx, cy] = stack.pop();
             if (stateAt(cx, cy) !== HIDDEN) continue;
             setState(cx, cy, OPEN);
+            if (!reducedMotion && opened < 1500) {
+                reveals.set(cx + ',' + cy, { t: performance.now(), delay: Math.min(Math.max(Math.abs(cx - x), Math.abs(cy - y)) * 18, 360) });
+            }
             opened++;
             world.explored++;
             world.farthest = Math.max(world.farthest, distanceFromCamp(cx, cy));
@@ -363,6 +368,7 @@
 
     function explode(x, y) {
         setState(x, y, BLAST);
+        if (!reducedMotion) blastFx = { x, y, t: performance.now() };
         world.hearts--;
         audio.play('lose');
         shakeUntil = performance.now() + 350;
@@ -688,6 +694,303 @@
         compassEl.classList.toggle('open', gateOpen());
     }
 
+    // ---- Tile art, painted once per zoom level and reused ------------------
+
+    let sprites = new Map(), spriteSize = 0, spriteDpr = 0;
+
+    function sprite(key, paint) {
+        const dpr = window.devicePixelRatio || 1;
+        if (spriteSize !== size || spriteDpr !== dpr) {
+            sprites = new Map();
+            spriteSize = size;
+            spriteDpr = dpr;
+        }
+        let art = sprites.get(key);
+        if (!art) {
+            art = document.createElement('canvas');
+            const px = Math.max(1, Math.ceil(size * dpr));
+            art.width = art.height = px;
+            const c = art.getContext('2d');
+            c.scale(px / size, px / size);
+            paint(c, size);
+            sprites.set(key, art);
+        }
+        return art;
+    }
+
+    function shadeColour(hex, amount) {
+        const n = parseInt(hex.replace('#', ''), 16);
+        const f = (v) => Math.max(0, Math.min(255, Math.round(v + amount * 255)));
+        return `rgb(${f(n >> 16)}, ${f((n >> 8) & 255)}, ${f(n & 255)})`;
+    }
+
+    function tilePath(c, s, inset, radius) {
+        c.beginPath();
+        if (c.roundRect) c.roundRect(inset, inset, s - inset * 2, s - inset * 2, radius);
+        else c.rect(inset, inset, s - inset * 2, s - inset * 2);
+    }
+
+    // Raised, unexplored ground: lit from above, shadowed below, with a little
+    // detail that says which land you are in.
+    function paintHidden(c, s, biome, lift, detail) {
+        const r = s * 0.16;
+        const fill = c.createLinearGradient(0, 0, 0, s);
+        fill.addColorStop(0, shadeColour(biome.tint, 0.08 + lift));
+        fill.addColorStop(1, shadeColour(biome.tint, -0.04 + lift));
+        tilePath(c, s, 1, r);
+        c.fillStyle = fill;
+        c.fill();
+        c.save();
+        tilePath(c, s, 1, r);
+        c.clip();
+        c.fillStyle = 'rgba(255, 255, 255, 0.12)';
+        c.fillRect(0, 1, s, Math.max(1, s * 0.06));
+        c.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        const base = Math.max(1.5, s * 0.1);
+        c.fillRect(0, s - 1 - base, s, base);
+        c.restore();
+        if (detail && s >= 16) paintDetail(c, s, biome.detail, detail);
+    }
+
+    function paintDetail(c, s, kind, variant) {
+        const ox = (variant - 2) * s * 0.14;
+        c.lineCap = 'round';
+        if (kind === 'grass') {
+            c.strokeStyle = 'rgba(150, 210, 130, 0.5)';
+            c.lineWidth = Math.max(1, s * 0.05);
+            c.beginPath();
+            for (const [x, lean] of [[0.38, -0.06], [0.46, 0], [0.54, 0.07]]) {
+                c.moveTo(s * x + ox, s * 0.74);
+                c.lineTo(s * (x + lean) + ox, s * 0.56);
+            }
+            c.stroke();
+        } else if (kind === 'tree') {
+            c.fillStyle = 'rgba(16, 52, 38, 0.6)';
+            c.beginPath();
+            c.moveTo(s * 0.5 + ox, s * 0.26);
+            c.lineTo(s * 0.66 + ox, s * 0.62);
+            c.lineTo(s * 0.34 + ox, s * 0.62);
+            c.closePath();
+            c.fill();
+            c.fillRect(s * 0.47 + ox, s * 0.62, s * 0.06, s * 0.1);
+        } else if (kind === 'reed') {
+            c.fillStyle = 'rgba(120, 175, 170, 0.3)';
+            c.beginPath();
+            c.ellipse(s * 0.5 + ox, s * 0.7, s * 0.2, s * 0.06, 0, 0, Math.PI * 2);
+            c.fill();
+            c.strokeStyle = 'rgba(170, 190, 120, 0.55)';
+            c.lineWidth = Math.max(1, s * 0.04);
+            c.beginPath();
+            c.moveTo(s * 0.44 + ox, s * 0.7);
+            c.lineTo(s * 0.42 + ox, s * 0.36);
+            c.moveTo(s * 0.54 + ox, s * 0.7);
+            c.lineTo(s * 0.57 + ox, s * 0.42);
+            c.stroke();
+        } else if (kind === 'snow') {
+            c.fillStyle = 'rgba(255, 255, 255, 0.55)';
+            for (const [x, y] of [[0.3, 0.34], [0.62, 0.3], [0.48, 0.55], [0.7, 0.66], [0.28, 0.7]]) {
+                c.beginPath();
+                c.arc(s * x + ox * 0.5, s * y, Math.max(0.8, s * 0.035), 0, Math.PI * 2);
+                c.fill();
+            }
+        } else if (kind === 'ember') {
+            c.strokeStyle = 'rgba(20, 8, 8, 0.45)';
+            c.lineWidth = Math.max(1, s * 0.04);
+            c.beginPath();
+            c.moveTo(s * 0.26 + ox, s * 0.4);
+            c.lineTo(s * 0.44 + ox, s * 0.5);
+            c.lineTo(s * 0.4 + ox, s * 0.66);
+            c.stroke();
+            c.fillStyle = 'rgba(255, 140, 80, 0.65)';
+            c.beginPath();
+            c.arc(s * 0.62 + ox * 0.5, s * 0.58, Math.max(0.9, s * 0.04), 0, Math.PI * 2);
+            c.fill();
+        }
+    }
+
+    // Uncovered ground sits lower, with a soft shadow along its top edge.
+    function paintOpen(c, s) {
+        tilePath(c, s, 1, s * 0.14);
+        c.fillStyle = C.open;
+        c.fill();
+        c.save();
+        c.clip();
+        const shadow = c.createLinearGradient(0, 0, 0, s * 0.3);
+        shadow.addColorStop(0, 'rgba(0, 0, 0, 0.35)');
+        shadow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        c.fillStyle = shadow;
+        c.fillRect(0, 0, s, s * 0.3);
+        c.restore();
+    }
+
+    function paintMine(c, s, cx, cy, r) {
+        c.strokeStyle = '#14151d';
+        c.lineWidth = Math.max(1.2, r * 0.32);
+        c.lineCap = 'round';
+        c.beginPath();
+        for (let k = 0; k < 8; k++) {
+            const a = (k * Math.PI) / 4;
+            c.moveTo(cx + Math.cos(a) * r * 0.6, cy + Math.sin(a) * r * 0.6);
+            c.lineTo(cx + Math.cos(a) * r * 1.45, cy + Math.sin(a) * r * 1.45);
+        }
+        c.stroke();
+        const body = c.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r);
+        body.addColorStop(0, '#6d7290');
+        body.addColorStop(1, '#14151d');
+        c.fillStyle = body;
+        c.beginPath();
+        c.arc(cx, cy, r, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = 'rgba(255, 255, 255, 0.75)';
+        c.beginPath();
+        c.arc(cx - r * 0.38, cy - r * 0.38, r * 0.2, 0, Math.PI * 2);
+        c.fill();
+    }
+
+    // A crater: scorched, with the spent mine still in it.
+    function paintBlast(c, s) {
+        tilePath(c, s, 1, s * 0.14);
+        const scorch = c.createRadialGradient(s / 2, s / 2, s * 0.05, s / 2, s / 2, s * 0.62);
+        scorch.addColorStop(0, '#ff7a55');
+        scorch.addColorStop(0.35, '#a3262f');
+        scorch.addColorStop(1, '#2a0d12');
+        c.fillStyle = scorch;
+        c.fill();
+        paintMine(c, s, s / 2, s / 2, s * 0.17);
+    }
+
+    function paintFlag(c, s) {
+        c.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        c.beginPath();
+        c.ellipse(s * 0.42, s * 0.79, s * 0.17, s * 0.05, 0, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = '#dfe2ee';
+        c.fillRect(s * 0.38, s * 0.2, Math.max(1.5, s * 0.06), s * 0.58);
+        c.fillStyle = C.flag;
+        c.beginPath();
+        c.moveTo(s * 0.42, s * 0.2);
+        c.lineTo(s * 0.76, s * 0.34);
+        c.lineTo(s * 0.42, s * 0.48);
+        c.closePath();
+        c.fill();
+        c.fillStyle = 'rgba(255, 255, 255, 0.28)';
+        c.beginPath();
+        c.moveTo(s * 0.42, s * 0.2);
+        c.lineTo(s * 0.76, s * 0.34);
+        c.lineTo(s * 0.42, s * 0.34);
+        c.closePath();
+        c.fill();
+    }
+
+    function paintChest(c, s) {
+        const x = s * 0.24, w = s * 0.52;
+        c.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        c.beginPath();
+        c.ellipse(s / 2, s * 0.76, s * 0.28, s * 0.06, 0, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = '#8a5a2e';
+        tilePathAt(c, x, s * 0.42, w, s * 0.32, s * 0.05);
+        c.fill();
+        c.fillStyle = '#b37a3f';
+        tilePathAt(c, x - s * 0.02, s * 0.3, w + s * 0.04, s * 0.15, s * 0.06);
+        c.fill();
+        c.fillStyle = '#f6c945';
+        c.fillRect(s * 0.46, s * 0.3, s * 0.08, s * 0.44);
+        c.fillRect(x, s * 0.43, w, Math.max(1, s * 0.04));
+        c.fillStyle = '#fff3c4';
+        c.fillRect(s * 0.47, s * 0.47, s * 0.06, s * 0.07);
+    }
+
+    function tilePathAt(c, x, y, w, h, r) {
+        c.beginPath();
+        if (c.roundRect) c.roundRect(x, y, w, h, r);
+        else c.rect(x, y, w, h);
+    }
+
+    function paintHeart(c, s) {
+        const fill = c.createLinearGradient(0, s * 0.25, 0, s * 0.78);
+        fill.addColorStop(0, '#ff9a9a');
+        fill.addColorStop(1, '#d63c50');
+        c.fillStyle = fill;
+        c.beginPath();
+        c.moveTo(s * 0.5, s * 0.76);
+        c.bezierCurveTo(s * 0.12, s * 0.52, s * 0.18, s * 0.22, s * 0.5, s * 0.36);
+        c.bezierCurveTo(s * 0.82, s * 0.22, s * 0.88, s * 0.52, s * 0.5, s * 0.76);
+        c.fill();
+        c.fillStyle = 'rgba(255, 255, 255, 0.55)';
+        c.beginPath();
+        c.ellipse(s * 0.36, s * 0.38, s * 0.06, s * 0.04, -0.6, 0, Math.PI * 2);
+        c.fill();
+    }
+
+    // A shrine stone: a faceted gem on a plinth, glowing until it is visited.
+    function paintShrine(c, s, visited) {
+        if (!visited) {
+            const glow = c.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+            glow.addColorStop(0, 'rgba(246, 201, 69, 0.5)');
+            glow.addColorStop(1, 'rgba(246, 201, 69, 0)');
+            c.fillStyle = glow;
+            c.fillRect(0, 0, s, s);
+        }
+        c.fillStyle = visited ? '#4a4f66' : '#6b5a2a';
+        tilePathAt(c, s * 0.3, s * 0.7, s * 0.4, s * 0.1, s * 0.03);
+        c.fill();
+        const top = s * 0.14, mid = s * 0.42, bottom = s * 0.7, half = s * 0.2;
+        c.fillStyle = visited ? '#9aa1bd' : '#ffe08a';
+        c.beginPath();
+        c.moveTo(s / 2, top);
+        c.lineTo(s / 2 - half, mid);
+        c.lineTo(s / 2, bottom);
+        c.closePath();
+        c.fill();
+        c.fillStyle = visited ? '#727891' : '#e8b42f';
+        c.beginPath();
+        c.moveTo(s / 2, top);
+        c.lineTo(s / 2 + half, mid);
+        c.lineTo(s / 2, bottom);
+        c.closePath();
+        c.fill();
+        c.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        c.beginPath();
+        c.arc(s * 0.45, s * 0.3, Math.max(0.8, s * 0.03), 0, Math.PI * 2);
+        c.fill();
+    }
+
+    function paintGate(c, s, open) {
+        const w = s * 0.62, h = s * 0.8, left = (s - w) / 2, bottom = s / 2 + h / 2, top = s / 2 - h / 2;
+        const arch = (inset) => {
+            c.beginPath();
+            c.moveTo(left + inset, bottom);
+            c.lineTo(left + inset, top + w / 2);
+            c.arc(s / 2, top + w / 2, w / 2 - inset, Math.PI, 0);
+            c.lineTo(left + w - inset, bottom);
+            c.closePath();
+        };
+        c.fillStyle = open ? '#a77de8' : '#5d6178';
+        arch(0);
+        c.fill();
+        c.fillStyle = open ? '#c9a8ff' : '#7a7f97';
+        arch(s * 0.04);
+        c.fill();
+        if (open) {
+            const portal = c.createLinearGradient(0, top, 0, bottom);
+            portal.addColorStop(0, '#ffffff');
+            portal.addColorStop(1, '#d7c1ff');
+            c.fillStyle = portal;
+        } else {
+            c.fillStyle = '#14161f';
+        }
+        arch(s * 0.12);
+        c.fill();
+        if (!open) {
+            c.fillStyle = '#9aa1bd';
+            c.fillRect(s * 0.46, s * 0.55, s * 0.08, s * 0.1);
+        }
+    }
+
+    const reveals = new Map();   // recently opened cells: key -> { t, delay }
+    let blastFx = null;          // the last explosion, while its ring expands
+
     function draw(now) {
         const w = canvas.clientWidth, h = canvas.clientHeight, dpr = window.devicePixelRatio || 1;
         const shake = now < shakeUntil && !reducedMotion ? (Math.random() - 0.5) * 8 : 0;
@@ -700,58 +1003,114 @@
         const y0 = Math.floor(cam.y - halfH) - 1, y1 = Math.ceil(cam.y + halfH) + 1;
         const screenX = (x) => (x - cam.x) * size + w / 2 - size / 2;
         const screenY = (y) => (y - cam.y) * size + h / 2 - size / 2;
-        const inner = Math.max(1, size - 2);
-        const font = `700 ${Math.round(size * 0.52)}px ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
         g.textAlign = 'center';
         g.textBaseline = 'middle';
-        g.font = font;
+        g.font = `800 ${Math.round(size * 0.54)}px ui-rounded, ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
+        const openTile = sprite('open', paintOpen);
+        const flagTile = sprite('flag', paintFlag);
+        const animating = reveals.size > 0;
+
+        const hiddenTile = (x, y) => {
+            const biome = biomeAt(x, y), lift = Math.floor(hash(x, y, 5) * 4), roll = hash(x, y, 6);
+            const detail = roll < 0.3 ? 1 + Math.floor(roll / 0.1) : 0;
+            return sprite(`h${biome.id}.${lift}.${detail}`, (c, s) => paintHidden(c, s, biome, (lift - 1.5) * 0.025, detail));
+        };
+        const item = (kind, x, y) => {
+            if (kind === 'gold') return sprite('chest', paintChest);
+            if (kind === 'heart') return sprite('heart', paintHeart);
+            if (kind === 'gate') return gateOpen() ? sprite('gate1', (c, s) => paintGate(c, s, true)) : sprite('gate0', (c, s) => paintGate(c, s, false));
+            const visited = world.shrines.has(shrineIn(regionOf(x), regionOf(y)).key);
+            return sprite(visited ? 'shrine1' : 'shrine0', (c, s) => paintShrine(c, s, visited));
+        };
 
         for (let y = y0; y <= y1; y++) {
             for (let x = x0; x <= x1; x++) {
-                const sx = screenX(x), sy = screenY(y), cx = sx + size / 2, cy = sy + size / 2 + 1;
+                const sx = screenX(x), sy = screenY(y), cx = sx + size / 2, cy = sy + size / 2 + size * 0.03;
                 const value = cellAt(x, y), state = value & 3;
                 const pickup = state === OPEN || state === HIDDEN ? pickupAt(x, y) : null;
 
                 if (state === OPEN) {
-                    g.fillStyle = C.open;
-                    g.fillRect(sx + 1, sy + 1, inner, inner);
-                    if (pickup && !(value & TAKEN)) {
-                        drawPickup(pickup, cx, cy, x, y);
-                    } else if (pickup === 'shrine' || pickup === 'gate') {
-                        drawPickup(pickup, cx, cy, x, y);
+                    // Freshly opened ground rises into place, rippling out from where you stepped.
+                    let grow = 1;
+                    if (animating) {
+                        const key = x + ',' + y, reveal = reveals.get(key);
+                        if (reveal) {
+                            grow = (now - reveal.t - reveal.delay) / 220;
+                            if (grow >= 1) { reveals.delete(key); grow = 1; }
+                        }
+                    }
+                    if (grow < 1) {
+                        g.drawImage(hiddenTile(x, y), sx, sy, size, size);
+                        if (grow <= 0) continue;
+                        const scale = 0.7 + 0.3 * grow, inset = (size * (1 - scale)) / 2;
+                        g.globalAlpha = grow;
+                        g.drawImage(openTile, sx + inset, sy + inset, size * scale, size * scale);
+                    } else {
+                        g.drawImage(openTile, sx, sy, size, size);
+                    }
+                    const landmark = pickup === 'shrine' || pickup === 'gate';
+                    if ((pickup && !(value & TAKEN)) || landmark) {
+                        g.drawImage(item(pickup, x, y), sx, sy, size, size);
                     } else {
                         const n = adjacent(x, y);
                         if (n) {
+                            if (size >= 18) {
+                                g.fillStyle = 'rgba(0, 0, 0, 0.55)';
+                                g.fillText(n, cx, cy + Math.max(1, size * 0.04));
+                            }
                             g.fillStyle = NUMBER_COLOURS[n];
                             g.fillText(n, cx, cy);
                         }
                     }
-                } else if (state === BLAST) {
-                    g.fillStyle = C.bad;
-                    g.fillRect(sx + 1, sy + 1, inner, inner);
-                    g.fillStyle = '#2a0b0b';
-                    g.fillText('✹', cx, cy);
-                } else {
-                    // Unexplored ground, with a little texture so it reads as terrain.
-                    const shade = hash(x, y, 5);
-                    g.fillStyle = biomeAt(x, y).tint;
-                    g.globalAlpha = 0.78 + shade * 0.22;
-                    g.fillRect(sx + 1, sy + 1, inner, inner);
                     g.globalAlpha = 1;
+                } else if (state === BLAST) {
+                    g.drawImage(sprite('blast', paintBlast), sx, sy, size, size);
+                } else {
+                    g.drawImage(hiddenTile(x, y), sx, sy, size, size);
                     if (state === FLAG) {
-                        g.fillStyle = C.flag;
-                        g.fillText('⚑', cx, cy);
+                        g.drawImage(flagTile, sx, sy, size, size);
                     } else if (pickup === 'shrine' || pickup === 'gate') {
                         // Shrines and the gate are landmarks: they show through the fog.
-                        g.globalAlpha = 0.65;
-                        drawPickup(pickup, cx, cy, x, y);
+                        g.globalAlpha = 0.7;
+                        g.drawImage(item(pickup, x, y), sx, sy, size, size);
                         g.globalAlpha = 1;
                     }
                 }
             }
         }
 
-        // The adventurer, with a lantern that lights the ground nearby.
+        // An open gate throws light around it.
+        if (gateOpen()) {
+            const gx = (place().gate.x - cam.x) * size + w / 2, gy = (place().gate.y - cam.y) * size + h / 2;
+            if (gx > -size * 3 && gx < w + size * 3 && gy > -size * 3 && gy < h + size * 3) {
+                const halo = g.createRadialGradient(gx, gy, 0, gx, gy, size * 2.2);
+                halo.addColorStop(0, 'rgba(196, 155, 255, 0.45)');
+                halo.addColorStop(1, 'rgba(196, 155, 255, 0)');
+                g.fillStyle = halo;
+                g.fillRect(gx - size * 2.2, gy - size * 2.2, size * 4.4, size * 4.4);
+            }
+        }
+
+        // The ring of the last explosion.
+        if (blastFx) {
+            const p = (now - blastFx.t) / 520;
+            if (p >= 1) {
+                blastFx = null;
+            } else {
+                const bx = (blastFx.x - cam.x) * size + w / 2, by = (blastFx.y - cam.y) * size + h / 2;
+                g.fillStyle = `rgba(255, 170, 110, ${0.45 * (1 - p)})`;
+                g.beginPath();
+                g.arc(bx, by, size * (0.6 + p * 1.4), 0, Math.PI * 2);
+                g.fill();
+                g.strokeStyle = `rgba(255, 120, 80, ${1 - p})`;
+                g.lineWidth = Math.max(2, size * 0.12 * (1 - p));
+                g.beginPath();
+                g.arc(bx, by, size * (0.5 + p * 2.8), 0, Math.PI * 2);
+                g.stroke();
+            }
+        }
+
+        // Darkness beyond the lantern's reach.
         const px = (world.px - cam.x) * size + w / 2, py = (world.py - cam.y) * size + h / 2;
         const light = g.createRadialGradient(px, py, size * 4, px, py, size * 14);
         light.addColorStop(0, 'rgba(10, 12, 20, 0)');
@@ -759,73 +1118,88 @@
         g.fillStyle = light;
         g.fillRect(-10, 0, w + 20, h);
 
-        const glow = g.createRadialGradient(px, py, 0, px, py, size * 1.4);
-        glow.addColorStop(0, 'rgba(255, 214, 120, 0.45)');
-        glow.addColorStop(1, 'rgba(255, 214, 120, 0)');
-        g.fillStyle = glow;
-        g.fillRect(px - size * 1.5, py - size * 1.5, size * 3, size * 3);
-
-        g.fillStyle = world.over ? C.muted : '#ffd678';
-        g.beginPath();
-        g.arc(px, py, size * 0.34, 0, Math.PI * 2);
-        g.fill();
-        g.strokeStyle = '#141a5c';
-        g.lineWidth = Math.max(1.5, size * 0.08);
-        g.stroke();
-        g.fillStyle = '#141a5c';
-        g.beginPath();
-        g.arc(px - size * 0.1, py - size * 0.05, size * 0.05, 0, Math.PI * 2);
-        g.arc(px + size * 0.1, py - size * 0.05, size * 0.05, 0, Math.PI * 2);
-        g.fill();
+        drawAdventurer(px, py);
     }
 
-    function drawPickup(kind, cx, cy, x, y) {
-        if (kind === 'gate') {
-            // An arch: dark and sealed, or glowing once every shrine is found.
-            const open = gateOpen(), w = size * 0.62, h = size * 0.78, left = cx - w / 2, bottom = cy + h / 2;
-            if (open) {
-                const glow = g.createRadialGradient(cx, cy, 0, cx, cy, size * 1.6);
-                glow.addColorStop(0, 'rgba(196, 155, 255, 0.55)');
-                glow.addColorStop(1, 'rgba(196, 155, 255, 0)');
-                g.fillStyle = glow;
-                g.fillRect(cx - size * 1.6, cy - size * 1.6, size * 3.2, size * 3.2);
-            }
-            const arch = (inset) => {
-                g.beginPath();
-                g.moveTo(left + inset, bottom);
-                g.lineTo(left + inset, cy - h / 2 + w / 2);
-                g.arc(cx, cy - h / 2 + w / 2, w / 2 - inset, Math.PI, 0);
-                g.lineTo(left + w - inset, bottom);
-                g.closePath();
-            };
-            g.fillStyle = open ? '#c49bff' : '#6b6f86';
-            arch(0);
-            g.fill();
-            g.fillStyle = open ? '#f3e8ff' : '#1a1e2d';
-            arch(size * 0.11);
-            g.fill();
-            return;
+    // A small traveller in a blue cloak and a wide hat, holding up a lantern.
+    function drawAdventurer(px, py) {
+        const s = size, out = world.over;
+        const lx = px + s * 0.28, ly = py + s * 0.02;
+
+        if (!out) {
+            const glow = g.createRadialGradient(lx, ly, 0, lx, ly, s * 1.5);
+            glow.addColorStop(0, 'rgba(255, 214, 120, 0.5)');
+            glow.addColorStop(1, 'rgba(255, 214, 120, 0)');
+            g.fillStyle = glow;
+            g.fillRect(lx - s * 1.5, ly - s * 1.5, s * 3, s * 3);
         }
-        if (kind === 'shrine') {
-            const visited = world.shrines.has(shrineIn(regionOf(x), regionOf(y)).key);
-            const r = size * 0.36;
-            g.fillStyle = visited ? C.muted : '#f6c945';
-            g.beginPath();
-            g.moveTo(cx, cy - r);
-            g.lineTo(cx + r * 0.8, cy);
-            g.lineTo(cx, cy + r);
-            g.lineTo(cx - r * 0.8, cy);
-            g.closePath();
-            g.fill();
-            g.fillStyle = '#141a5c';
-            g.fillText('✦', cx, cy);
-        } else if (kind === 'gold') {
-            g.fillStyle = '#f6c945';
-            g.fillText('◆', cx, cy);
-        } else {
-            g.fillStyle = C.bad;
-            g.fillText('♥', cx, cy);
-        }
+
+        g.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        g.beginPath();
+        g.ellipse(px, py + s * 0.34, s * 0.26, s * 0.08, 0, 0, Math.PI * 2);
+        g.fill();
+
+        g.lineWidth = Math.max(1, s * 0.05);
+        g.strokeStyle = '#0e1238';
+
+        // Cloak
+        g.fillStyle = out ? '#5d6178' : '#3f5fe0';
+        g.beginPath();
+        g.moveTo(px - s * 0.25, py + s * 0.33);
+        g.quadraticCurveTo(px - s * 0.22, py - s * 0.08, px, py - s * 0.1);
+        g.quadraticCurveTo(px + s * 0.22, py - s * 0.08, px + s * 0.25, py + s * 0.33);
+        g.closePath();
+        g.fill();
+        g.stroke();
+        g.fillStyle = out ? '#727891' : '#6f8bff';
+        g.beginPath();
+        g.moveTo(px - s * 0.04, py - s * 0.08);
+        g.lineTo(px + s * 0.04, py - s * 0.08);
+        g.lineTo(px + s * 0.07, py + s * 0.32);
+        g.lineTo(px - s * 0.07, py + s * 0.32);
+        g.closePath();
+        g.fill();
+
+        // Lantern on its arm
+        g.strokeStyle = '#0e1238';
+        g.beginPath();
+        g.moveTo(px + s * 0.14, py + s * 0.02);
+        g.lineTo(lx, ly - s * 0.08);
+        g.stroke();
+        g.fillStyle = out ? '#9aa1bd' : '#ffd678';
+        g.beginPath();
+        g.arc(lx, ly, s * 0.08, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+
+        // Head
+        g.fillStyle = out ? '#b9bccb' : '#ffd9a8';
+        g.beginPath();
+        g.arc(px, py - s * 0.19, s * 0.13, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+        g.fillStyle = '#0e1238';
+        g.beginPath();
+        g.arc(px - s * 0.045, py - s * 0.18, Math.max(0.8, s * 0.022), 0, Math.PI * 2);
+        g.arc(px + s * 0.045, py - s * 0.18, Math.max(0.8, s * 0.022), 0, Math.PI * 2);
+        g.fill();
+
+        // Hat
+        g.fillStyle = out ? '#4a4f66' : '#7a4a24';
+        g.beginPath();
+        g.ellipse(px, py - s * 0.27, s * 0.22, s * 0.055, 0, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+        g.fillStyle = out ? '#5d6178' : '#98602f';
+        g.beginPath();
+        g.moveTo(px - s * 0.12, py - s * 0.28);
+        g.quadraticCurveTo(px - s * 0.1, py - s * 0.44, px + s * 0.02, py - s * 0.46);
+        g.quadraticCurveTo(px + s * 0.11, py - s * 0.4, px + s * 0.12, py - s * 0.28);
+        g.closePath();
+        g.fill();
+        g.stroke();
+        g.fillStyle = out ? '#727891' : '#f6c945';
+        g.fillRect(px - s * 0.11, py - s * 0.32, s * 0.22, Math.max(1, s * 0.035));
     }
 
     function frame(now) {
@@ -839,7 +1213,7 @@
                 dirty = true;
             }
         }
-        if (now < shakeUntil) dirty = true;
+        if (now < shakeUntil || reveals.size || blastFx) dirty = true;
         if (dirty) {
             dirty = false;
             draw(now);

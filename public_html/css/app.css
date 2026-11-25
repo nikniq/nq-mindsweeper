@@ -13,6 +13,9 @@
     --cell-hover: #485080;
     --cell-open: #1a1e2d;
     --flag: #ffb454;
+    --flag-art: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cellipse cx='10' cy='20.5' rx='5' ry='1.4' fill='rgba(0,0,0,.35)'/%3E%3Crect x='8.6' y='3.5' width='1.8' height='16.5' rx='.9' fill='%23dfe2ee'/%3E%3Cpath d='M10.4 3.6 19 7.4 10.4 11.2Z' fill='%23ffb454'/%3E%3Cpath d='M10.4 3.6 19 7.4H10.4Z' fill='%23ffd08a'/%3E%3C/svg%3E");
+    --mine-art: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.35' r='.75'%3E%3Cstop offset='0' stop-color='%236d7290'/%3E%3Cstop offset='1' stop-color='%2314151d'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cg stroke='%2314151d' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M12 2.8v18.4M2.8 12h18.4M5.5 5.5l13 13M18.5 5.5l-13 13'/%3E%3C/g%3E%3Ccircle cx='12' cy='12' r='6.4' fill='url(%23g)'/%3E%3Ccircle cx='9.7' cy='9.7' r='1.5' fill='%23fff' opacity='.8'/%3E%3C/svg%3E");
+    --bevel: linear-gradient(180deg, rgba(255, 255, 255, .12), rgba(255, 255, 255, 0) 55%, rgba(0, 0, 0, .14));
     --size: 32px;
 }
 
@@ -176,26 +179,50 @@ button.link:hover { color: var(--text); }
     place-items: center;
     padding: 0;
     border: 0;
-    border-radius: 4px;
-    background: var(--cell);
+    border-radius: 5px;
+    background-color: var(--cell);
+    background-image: var(--bevel);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -2px 0 rgba(0, 0, 0, .3);
     color: var(--text);
-    font: 700 calc(var(--size) * .5)/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font: 800 calc(var(--size) * .52)/1 ui-rounded, ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     cursor: pointer;
+    transition: background-color .12s, transform .08s;
 }
-.cell:not(.open):hover { background: var(--cell-hover); }
+.cell:not(.open):hover { background-color: var(--cell-hover); }
+.cell:not(.open):active { transform: translateY(1px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), inset 0 -1px 0 rgba(0, 0, 0, .3); }
 .board.over .cell { cursor: default; }
-.board.over .cell:not(.open):hover { background: var(--cell); }
-.cell.open { background: var(--cell-open); cursor: default; animation: open .16s ease-out backwards; }
+.board.over .cell:not(.open):hover { background-color: var(--cell); }
+.board.over .cell:active { transform: none; }
+.cell.open {
+    background: var(--cell-open);
+    box-shadow: inset 0 2px 3px rgba(0, 0, 0, .5);
+    text-shadow: 0 1px 0 rgba(0, 0, 0, .6);
+    cursor: default;
+    animation: open .16s ease-out backwards;
+}
 .cell.open[class*=" n"] { cursor: pointer; }
 .cell.hint { background: var(--cell-hover); box-shadow: inset 0 0 0 2px var(--accent); }
 .cell.start { box-shadow: inset 0 0 0 2px var(--accent); animation: pulse 1.4s ease-in-out infinite; }
 .cell.hint-safe { box-shadow: inset 0 0 0 3px var(--good); background: rgba(95, 211, 154, .35); }
 .cell.hint-mine { box-shadow: inset 0 0 0 3px var(--flag); background: rgba(255, 180, 84, .3); }
-.cell.flag::after { content: "⚑"; color: var(--flag); animation: pop .15s ease-out; }
-.cell.mine { background: var(--cell-open); animation: open .2s ease-out backwards; }
-.cell.mine::after { content: "✹"; color: var(--text); }
-.cell.hit { background: var(--bad); }
-.cell.hit::after { color: #2a0b0b; }
+.cell.flag {
+    background-image: var(--flag-art), var(--bevel);
+    background-size: 70%, auto;
+    background-position: center;
+    background-repeat: no-repeat;
+    animation: flag-pop .18s ease-out;
+}
+.cell.mine {
+    background: var(--mine-art) center / 66% no-repeat, var(--cell-open);
+    box-shadow: inset 0 2px 3px rgba(0, 0, 0, .5);
+    animation: open .2s ease-out backwards;
+}
+.cell.hit {
+    background: var(--mine-art) center / 66% no-repeat, radial-gradient(circle, #ffb08a 0%, #ff6b6b 42%, #9c2a35 100%);
+    box-shadow: 0 0 16px rgba(255, 107, 107, .65);
+    position: relative;
+    z-index: 1;
+}
 .cell.wrong::after { content: "✕"; color: var(--bad); }
 
 .n1 { color: #7c9cff; } .n2 { color: #5fd39a; } .n3 { color: #ff7b7b; } .n4 { color: #c792ea; }
@@ -326,6 +353,7 @@ button.link:hover { color: var(--text); }
 
 @keyframes open { from { background: var(--cell); color: transparent; transform: scale(.82); } }
 @keyframes pulse { 50% { background: var(--accent); } }
+@keyframes flag-pop { from { background-size: 120%, auto; } }
 @keyframes pop { from { transform: scale(1.6); } }
 @keyframes shake {
     25% { transform: translateX(-5px); }
