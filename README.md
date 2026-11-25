@@ -16,7 +16,7 @@ A mine-clearing puzzle game built with Laravel. Anyone can play straight away; a
 - No-guessing boards: an optional mode where every board can be cleared by deduction alone (unranked)
 - Daily streak and a countdown to the next daily board; confetti on a win
 - Custom boards of your own width, height and mine count (unranked)
-- Adventure mode: an endless, seeded minefield explored one step at a time with a few hearts. Chests, hearts and shrines to find, a compass to the nearest shrine, mines that thicken the farther you roam, and a journey saved in the browser
+- Adventure mode: an endless, seeded minefield explored one step at a time with a few hearts. Chests, hearts and shrines to find, a compass to the nearest shrine, mines that thicken the farther you roam, biomes with their own mine density, a minimap, a gold-costing scout that flags nearby mines, milestones, and a journey saved in the browser
 - A saved win tells you your leaderboard position, and you can change your leaderboard name on the leaderboard page
 - Flag mode for touch screens, keyboard play, local stats (best time, win rate, streak), generated music and sound effects
 

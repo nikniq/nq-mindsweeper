@@ -830,7 +830,7 @@
     // Page-level shortcuts: N or R new game, 1-3 difficulty, F flag mode.
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
-        if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+        if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]')) return;
         const key = e.key.toLowerCase();
         if (key === 'n' || key === 'r') return newGame();
         if (key === 'f') return setFlagMode(!flagMode);

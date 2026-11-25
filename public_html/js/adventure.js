@@ -20,6 +20,35 @@
     const FLOOD_CAP = 3000;      // most cells one step may open
     const PATH_CAP = 6000;       // most cells a path search may visit
     const SAVE_KEY = 'adventure', BEST_KEY = 'adventureBest';
+    const SCOUT_COST = 40, SCOUT_RADIUS = 2;
+    const MINIMAP_CELLS = 128;   // cells across the minimap, one pixel each
+    const BIOME_SCALE = 40;      // rough size of a biome, in cells
+
+    // Each biome looks different and shifts the mine density a little.
+    const BIOMES = [
+        { name: 'Quiet Meadows', tint: '#3a4a60', mod: -0.02 },
+        { name: 'Whispering Forest', tint: '#2f4c44', mod: 0 },
+        { name: 'Sunken Marsh', tint: '#3d4838', mod: 0.02 },
+        { name: 'Frostbound Steppe', tint: '#4b5876', mod: 0.01 },
+        { name: 'Ashen Wastes', tint: '#4d3a3c', mod: 0.045 },
+    ];
+
+    const MILESTONES = [
+        ['explored', 1500, 'Pathfinder: 1,500 cells uncovered'],
+        ['explored', 4000, 'Cartographer: 4,000 cells uncovered'],
+        ['explored', 10000, 'Surveyor: 10,000 cells uncovered'],
+        ['explored', 25000, 'Worldwalker: 25,000 cells uncovered'],
+        ['farthest', 50, 'Far from home: 50 cells from camp'],
+        ['farthest', 100, 'Wanderer: 100 cells from camp'],
+        ['farthest', 200, 'Trailblazer: 200 cells from camp'],
+        ['farthest', 400, 'Beyond the maps: 400 cells from camp'],
+        ['shrines', 1, 'Pilgrim: your first shrine'],
+        ['shrines', 5, 'Devotee: 5 shrines'],
+        ['shrines', 12, 'Keeper of shrines: 12 shrines'],
+        ['gold', 500, 'Prospector: 500 gold'],
+        ['gold', 1500, 'Treasure hunter: 1,500 gold'],
+        ['biomes', 5, 'Seen it all: every kind of land'],
+    ];
     const HIDDEN = 0, OPEN = 1, FLAG = 2, BLAST = 3, TAKEN = 4; // low two bits: state; TAKEN: pickup collected
     const NUMBER_COLOURS = ['', '#7c9cff', '#5fd39a', '#ff7b7b', '#c792ea', '#ffb454', '#5ccfe6', '#f0f0f0', '#9aa1bd'];
     const DIRECTIONS = {
@@ -37,7 +66,13 @@
     };
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    let world, shrineCache, best = 0;
+    let world, shrineCache, mineCache, best = 0;
+    const minimap = document.getElementById('adv-minimap');
+    const mini = minimap.getContext('2d');
+    const toastEl = document.getElementById('adv-toast');
+    const biomeEl = document.getElementById('adv-biome');
+    const scoutBtn = document.getElementById('adv-scout');
+    let toastQueue = [], toastTimer = null;
     let size = 30;                               // cell size in CSS pixels
     const cam = { x: 0, y: 0, free: false };     // view centre, in cells
     let dirty = true, walkQueue = [], walkTimer = null, flagMode = false, shakeUntil = 0, saveTimer = null;
@@ -72,13 +107,42 @@
         return shrine;
     }
 
-    // Camp and the ground around each shrine are always safe.
+    const smooth = (t) => t * t * (3 - 2 * t);
+
+    // Smooth value noise on a coarse grid, so biomes form large blobs.
+    function noise(x, y) {
+        const gx = Math.floor(x / BIOME_SCALE), gy = Math.floor(y / BIOME_SCALE);
+        const fx = smooth(x / BIOME_SCALE - gx), fy = smooth(y / BIOME_SCALE - gy);
+        const top = hash(gx, gy, 21) * (1 - fx) + hash(gx + 1, gy, 21) * fx;
+        const bottom = hash(gx, gy + 1, 21) * (1 - fx) + hash(gx + 1, gy + 1, 21) * fx;
+        return top * (1 - fy) + bottom * fy;
+    }
+
+    function biomeAt(x, y) {
+        if (distanceFromCamp(x, y) < 16) return BIOMES[0];
+        const n = noise(x, y);
+        return BIOMES[n < 0.3 ? 0 : n < 0.5 ? 1 : n < 0.65 ? 2 : n < 0.8 ? 3 : 4];
+    }
+
+    // Whether a cell holds a mine, worked out once per cell and remembered.
     function isMine(x, y) {
+        const key = Math.floor(x / CHUNK) + ',' + Math.floor(y / CHUNK);
+        let known = mineCache.get(key);
+        if (!known) mineCache.set(key, (known = new Uint8Array(CHUNK * CHUNK)));
+        const at = offset(x, y);
+        if (!known[at]) known[at] = rollMine(x, y) ? 2 : 1;
+        return known[at] === 2;
+    }
+
+    // Camp and the ground around each shrine are always safe. Worlds made
+    // before biomes existed (gen 1) keep their original layout.
+    function rollMine(x, y) {
         const d = distanceFromCamp(x, y);
         if (d <= 1) return false;
         const shrine = shrineIn(regionOf(x), regionOf(y));
         if (shrine && Math.abs(shrine.x - x) <= 1 && Math.abs(shrine.y - y) <= 1) return false;
-        return hash(x, y, 1) < Math.min(0.23, 0.12 + d * 0.0006);
+        const biome = world.gen >= 2 ? biomeAt(x, y).mod : 0;
+        return hash(x, y, 1) < Math.min(0.23, 0.12 + d * 0.0006) + biome;
     }
 
     function adjacent(x, y) {
@@ -94,7 +158,8 @@
         if (shrine && shrine.x === x && shrine.y === y) return 'shrine';
         if (distanceFromCamp(x, y) <= 2 || isMine(x, y)) return null;
         const roll = hash(x, y, 2);
-        return roll < 0.011 ? 'gold' : roll < 0.015 ? 'heart' : null;
+        const chests = world.gen >= 2 ? 0.017 : 0.011;
+        return roll < chests ? 'gold' : roll < chests + 0.004 ? 'heart' : null;
     }
 
     // ---- Stored cell state, in chunks -------------------------------------
@@ -116,10 +181,11 @@
     function newWorld() {
         world = {
             seed: (Math.random() * 4294967296) >>> 0,
-            px: 0, py: 0, hearts: START_HEARTS, gold: 0, explored: 0, farthest: 0, over: false,
-            shrines: new Set(), chunks: new Map(),
+            gen: 2, px: 0, py: 0, hearts: START_HEARTS, gold: 0, explored: 0, farthest: 0, over: false,
+            shrines: new Set(), chunks: new Map(), milestones: [], biomesSeen: [BIOMES[0].name],
         };
         shrineCache = new Map();
+        mineCache = new Map();
         open(0, 0);
         cam.x = 0; cam.y = 0; cam.free = false;
     }
@@ -133,8 +199,14 @@
             for (const [key, data] of Object.entries(saved.chunks)) {
                 chunks.set(key, Uint8Array.from(atob(data), (ch) => ch.charCodeAt(0)));
             }
-            world = { ...saved, shrines: new Set(saved.shrines), chunks };
+            world = { gen: 1, biomesSeen: [], ...saved, shrines: new Set(saved.shrines), chunks };
             shrineCache = new Map();
+            mineCache = new Map();
+            if (!world.milestones) {
+                // Saved before milestones existed: count what was already done, quietly.
+                world.milestones = [];
+                checkMilestones(true);
+            }
             cam.x = world.px; cam.y = world.py;
             return true;
         } catch (e) {
@@ -194,6 +266,7 @@
         world.px = x;
         world.py = y;
         cam.free = false;
+        enterBiome(x, y);
         collect(x, y);
         changed();
         return true;
@@ -270,8 +343,116 @@
 
     function changed() {
         dirty = true;
+        checkMilestones(false);
         renderHud();
+        drawMinimap();
         saveSoon();
+    }
+
+    let currentBiome = null;
+
+    function enterBiome(x, y) {
+        const biome = biomeAt(x, y);
+        if (biome === currentBiome) return;
+        const first = currentBiome !== null && !world.biomesSeen.includes(biome.name);
+        currentBiome = biome;
+        if (!world.biomesSeen.includes(biome.name)) world.biomesSeen.push(biome.name);
+        if (first) toast(`You discover the ${biome.name}.${biome.mod > 0.03 ? ' Mines lie thick here.' : ''}`);
+    }
+
+    function checkMilestones(quiet) {
+        const reached = {
+            explored: world.explored, farthest: world.farthest, shrines: world.shrines.size,
+            gold: world.gold, biomes: world.biomesSeen.length,
+        };
+        for (const [stat, target, text] of MILESTONES) {
+            const id = stat + ':' + target;
+            if (reached[stat] < target || world.milestones.includes(id)) continue;
+            world.milestones.push(id);
+            if (!quiet) toast('🏅 ' + text);
+        }
+    }
+
+    function toast(text) {
+        // Keep up with fast walking: never hold more than a couple waiting.
+        if (toastQueue.length >= 2) toastQueue.shift();
+        toastQueue.push(text);
+        if (!toastTimer) nextToast();
+    }
+
+    function nextToast() {
+        const text = toastQueue.shift();
+        if (text === undefined) {
+            toastEl.hidden = true;
+            toastTimer = null;
+            return;
+        }
+        toastEl.textContent = text;
+        toastEl.hidden = false;
+        toastEl.classList.remove('show');
+        void toastEl.offsetWidth; // restart the animation
+        toastEl.classList.add('show');
+        toastTimer = setTimeout(nextToast, 2600);
+    }
+
+    // Pay gold to have every mine close by marked with a flag.
+    function scout() {
+        if (world.over) return;
+        if (world.gold < SCOUT_COST) {
+            audio.play('deny');
+            say(`Scouting costs ${SCOUT_COST} gold and you have ${world.gold}. Find chests and shrines first.`);
+            return;
+        }
+        let marked = 0;
+        for (let dy = -SCOUT_RADIUS; dy <= SCOUT_RADIUS; dy++) {
+            for (let dx = -SCOUT_RADIUS; dx <= SCOUT_RADIUS; dx++) {
+                const x = world.px + dx, y = world.py + dy;
+                if (stateAt(x, y) === HIDDEN && isMine(x, y)) {
+                    setState(x, y, FLAG);
+                    marked++;
+                }
+            }
+        }
+        if (!marked) {
+            say('Your scout finds no unmarked mines within two cells, so no gold was spent.');
+            return;
+        }
+        world.gold -= SCOUT_COST;
+        audio.play('flag');
+        say(`Your scout marks ${marked} ${marked === 1 ? 'mine' : 'mines'} nearby. −${SCOUT_COST} gold.`);
+        changed();
+    }
+
+    // A small overview of the land around the adventurer.
+    function drawMinimap() {
+        const n = MINIMAP_CELLS, half = n / 2;
+        const image = mini.createImageData(n, n);
+        const px = image.data;
+        const paint = (i, r, gr, b, a) => { px[i] = r; px[i + 1] = gr; px[i + 2] = b; px[i + 3] = a; };
+        for (let y = 0; y < n; y++) {
+            for (let x = 0; x < n; x++) {
+                const state = stateAt(world.px - half + x, world.py - half + y), i = (y * n + x) * 4;
+                if (state === OPEN) paint(i, 120, 132, 186, 255);
+                else if (state === FLAG) paint(i, 255, 180, 84, 255);
+                else if (state === BLAST) paint(i, 255, 107, 107, 255);
+                else paint(i, 18, 20, 28, 170);
+            }
+        }
+        mini.putImageData(image, 0, 0);
+
+        const dot = (x, y, fill, r) => {
+            mini.fillStyle = fill;
+            mini.fillRect(x - world.px + half - r, y - world.py + half - r, r * 2 + 1, r * 2 + 1);
+        };
+        const rx0 = regionOf(world.px), ry0 = regionOf(world.py), reach = Math.ceil(half / REGION) + 1;
+        for (let ry = ry0 - reach; ry <= ry0 + reach; ry++) {
+            for (let rx = rx0 - reach; rx <= rx0 + reach; rx++) {
+                const shrine = shrineIn(rx, ry);
+                if (shrine) dot(shrine.x, shrine.y, world.shrines.has(shrine.key) ? '#9aa1bd' : '#f6c945', 1);
+            }
+        }
+        if (Math.abs(world.px) < half && Math.abs(world.py) < half) dot(0, 0, '#5fd39a', 1);
+        dot(world.px, world.py, '#ffffff', 1);
     }
 
     // ---- Walking further than one cell --------------------------------------
@@ -367,6 +548,8 @@
         heartsEl.textContent = '♥'.repeat(Math.max(0, world.hearts)) + '♡'.repeat(Math.max(0, MAX_HEARTS - world.hearts));
         heartsEl.setAttribute('aria-label', `${world.hearts} of ${MAX_HEARTS}`);
         goldEl.textContent = world.gold;
+        biomeEl.textContent = biomeAt(world.px, world.py).name;
+        scoutBtn.disabled = world.over || world.gold < SCOUT_COST;
         exploredEl.textContent = world.explored;
         farthestEl.textContent = world.farthest;
         const current = score();
@@ -429,7 +612,7 @@
                 } else {
                     // Unexplored ground, with a little texture so it reads as terrain.
                     const shade = hash(x, y, 5);
-                    g.fillStyle = C.cell;
+                    g.fillStyle = biomeAt(x, y).tint;
                     g.globalAlpha = 0.78 + shade * 0.22;
                     g.fillRect(sx + 1, sy + 1, inner, inner);
                     g.globalAlpha = 1;
@@ -602,7 +785,7 @@
 
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+        if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]')) return;
         const key = e.key.toLowerCase();
         const direction = DIRECTIONS[key];
         if (direction) {
@@ -615,6 +798,7 @@
         if (e.repeat) return;
         if (key === 'f') setFlagMode(!flagMode);
         else if (key === 'c') centre();
+        else if (key === 'r') scout();
         else if (key === 'n') restart();
         else if (key === '+' || key === '=') zoom(1.15);
         else if (key === '-' || key === '_') zoom(1 / 1.15);
@@ -628,6 +812,7 @@
 
     flagBtn.addEventListener('click', () => setFlagMode(!flagMode));
     $('adv-center').addEventListener('click', centre);
+    scoutBtn.addEventListener('click', scout);
     $('adv-new').addEventListener('click', restart);
     $('adv-restart').addEventListener('click', restart);
 
@@ -655,7 +840,9 @@
     const resumed = load();
     if (!resumed) newWorld();
     resize();
+    currentBiome = biomeAt(world.px, world.py);
     renderHud();
+    drawMinimap();
     if (world.over) finish();
     else say(resumed ? 'Welcome back. Your journey continues where you left it.' : 'You set out from camp. Walk onto hidden cells to explore; the numbers warn of mines.');
     requestAnimationFrame(frame);
