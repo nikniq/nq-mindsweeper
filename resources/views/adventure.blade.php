@@ -4,6 +4,12 @@
 
 @section('content')
     <section class="adventure" id="adventure">
+        <header class="place">
+            <p class="place-level" id="adv-place-level">Place 1</p>
+            <h1 id="adv-place" class="place-name">Somewhere</h1>
+            <p id="adv-place-line" class="place-line"></p>
+        </header>
+
         <div class="adv-hud">
             <div class="readout" title="Hearts: a mine costs one"><span class="label">Hearts</span><span id="adv-hearts" class="hearts">♥♥♥</span></div>
             <div class="readout" title="Gold from chests and shrines"><span class="label">Gold</span><span id="adv-gold">0</span></div>
@@ -59,8 +65,10 @@
 
         <div class="help">
             <p>
-                The map never ends. Walk onto a hidden cell to uncover it, and read the numbers to avoid mines: each one costs a heart.
-                Chests (◆) hold gold, hearts (♥) heal, and shrines (✦) restore a heart and pay well. The compass points to the nearest one you have not visited.
+                Every map is a place, and the land never ends. Walk onto a hidden cell to uncover it, and read the numbers to avoid mines: each one costs a heart.
+                Each place has a few shrines (✦); visiting one restores a heart and pays well. Find them all and the place's gate (an arch) opens.
+                Step through it to travel on to the next place, which has more shrines and more mines. Your hearts and gold come with you.
+                Chests (◆) hold gold and hearts (♥) heal. The compass points to the nearest shrine, then to the gate.
                 Mines grow denser the farther you roam, and thicker still in some lands, such as the Ashen Wastes.
                 Short on nerve? Scout (40 gold) flags every mine within two cells of you.
             </p>

@@ -33,6 +33,23 @@
         { name: 'Ashen Wastes', tint: '#4d3a3c', mod: 0.045 },
     ];
 
+    // Every map is a place with its own name and character.
+    const PLACE_NAMES = [
+        'Ellwyn', 'Thornmere', 'Corrow', 'Saltmarsh', 'Duskhollow', 'Ravensgate', 'Aldmoor', 'Brackenford',
+        'Wyrmrest', 'Cindervale', 'Mirelow', 'Starfall', 'Gloamwood', 'Ironholt', 'Hollowmere', 'Ashbourne',
+    ];
+    const PLACE_KINDS = [
+        { kind: 'Vale', line: 'A green valley where old shrines hide among the grass.' },
+        { kind: 'Moor', line: 'Wind-scoured moorland. The shrines stand like waymarkers.' },
+        { kind: 'Fen', line: 'Low, wet country where the ground hides its teeth. Step softly.' },
+        { kind: 'Barrows', line: 'Ancient burial mounds. Something sleeps beneath the turf.' },
+        { kind: 'Reach', line: 'A long stretch of wild country at the edge of every map.' },
+        { kind: 'Hollows', line: 'Sunken ground riddled with old workings and forgotten traps.' },
+        { kind: 'Highlands', line: 'Cold heights where the wind howls through the gate.' },
+        { kind: 'Wastes', line: 'Scorched land, sown thick with mines by some old war.' },
+    ];
+    const MAX_PLACE_SHRINES = 16;
+
     const MILESTONES = [
         ['explored', 1500, 'Pathfinder: 1,500 cells uncovered'],
         ['explored', 4000, 'Cartographer: 4,000 cells uncovered'],
@@ -48,6 +65,9 @@
         ['gold', 500, 'Prospector: 500 gold'],
         ['gold', 1500, 'Treasure hunter: 1,500 gold'],
         ['biomes', 5, 'Seen it all: every kind of land'],
+        ['places', 1, 'Gatecrosser: through your first gate'],
+        ['places', 3, 'Wayfarer: three places behind you'],
+        ['places', 7, 'Legend of the roads: seven places behind you'],
     ];
     const HIDDEN = 0, OPEN = 1, FLAG = 2, BLAST = 3, TAKEN = 4; // low two bits: state; TAKEN: pickup collected
     const NUMBER_COLOURS = ['', '#7c9cff', '#5fd39a', '#ff7b7b', '#c792ea', '#ffb454', '#5ccfe6', '#f0f0f0', '#9aa1bd'];
@@ -66,11 +86,15 @@
     };
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    let world, shrineCache, mineCache, best = 0;
+    let world, shrineCache, mineCache, placeCache, best = 0;
     const minimap = document.getElementById('adv-minimap');
     const mini = minimap.getContext('2d');
     const toastEl = document.getElementById('adv-toast');
     const biomeEl = document.getElementById('adv-biome');
+    const placeEl = document.getElementById('adv-place');
+    const placeLevelEl = document.getElementById('adv-place-level');
+    const placeLineEl = document.getElementById('adv-place-line');
+    const compassEl = document.getElementById('adv-compass');
     const scoutBtn = document.getElementById('adv-scout');
     let toastQueue = [], toastTimer = null;
     let size = 30;                               // cell size in CSS pixels
@@ -107,6 +131,48 @@
         return shrine;
     }
 
+    // The place this map is: its name, its shrines and its gate. Shrines sit
+    // in the regions next to camp, more of them in later places; the gate is
+    // the clearing of a region one ring further out.
+    function place() {
+        if (placeCache) return placeCache;
+        const ring = (r) => {
+            const out = [];
+            for (let ry = -r; ry <= r; ry++) {
+                for (let rx = -r; rx <= r; rx++) if (Math.max(Math.abs(rx), Math.abs(ry)) === r) out.push([rx, ry]);
+            }
+            return out;
+        };
+        const shuffled = (list, salt) => list
+            .map((r) => [hash(r[0], r[1], salt), r])
+            .sort((a, b) => a[0] - b[0])
+            .map((pair) => pair[1]);
+        const inner = shuffled(ring(1), 41), outer = shuffled(ring(2), 42);
+        const count = Math.min(MAX_PLACE_SHRINES, 4 + 2 * (world.level - 1));
+        const shrines = [...inner, ...outer].slice(0, count).map(([rx, ry]) => shrineIn(rx, ry));
+        const [gx, gy] = outer[outer.length - 1];
+        const gate = shrineIn(gx, gy);
+        const kind = PLACE_KINDS[Math.floor(hash(0, 0, 32) * PLACE_KINDS.length)];
+        // Don't send the traveller somewhere whose name they have already passed through.
+        const first = Math.floor(hash(0, 0, 31) * PLACE_NAMES.length);
+        let name = PLACE_NAMES[first];
+        for (let k = 0; k < PLACE_NAMES.length; k++) {
+            name = PLACE_NAMES[(first + k) % PLACE_NAMES.length];
+            if (!world.places.some((visited) => visited.startsWith(name + ' '))) break;
+        }
+        placeCache = {
+            name: name + ' ' + kind.kind,
+            line: kind.line,
+            shrines,
+            keys: new Set(shrines.map((s) => s.key)),
+            gate: { x: gate.x, y: gate.y },
+        };
+        return placeCache;
+    }
+
+    const shrinesLeft = () => place().shrines.filter((s) => !world.shrines.has(s.key));
+    const gateOpen = () => shrinesLeft().length === 0;
+
     const smooth = (t) => t * t * (3 - 2 * t);
 
     // Smooth value noise on a coarse grid, so biomes form large blobs.
@@ -142,7 +208,8 @@
         const shrine = shrineIn(regionOf(x), regionOf(y));
         if (shrine && Math.abs(shrine.x - x) <= 1 && Math.abs(shrine.y - y) <= 1) return false;
         const biome = world.gen >= 2 ? biomeAt(x, y).mod : 0;
-        return hash(x, y, 1) < Math.min(0.23, 0.12 + d * 0.0006) + biome;
+        const deeper = world.gen >= 3 ? Math.min(0.05, (world.level - 1) * 0.01) : 0; // later places are harsher
+        return hash(x, y, 1) < Math.min(0.23, 0.12 + d * 0.0006) + biome + deeper;
     }
 
     function adjacent(x, y) {
@@ -155,7 +222,12 @@
 
     function pickupAt(x, y) {
         const shrine = shrineIn(regionOf(x), regionOf(y));
-        if (shrine && shrine.x === x && shrine.y === y) return 'shrine';
+        if (shrine && shrine.x === x && shrine.y === y) {
+            // Other regions keep their clearing, but only this place's shrines are shrines.
+            if (place().keys.has(shrine.key)) return 'shrine';
+            if (place().gate.x === x && place().gate.y === y) return 'gate';
+            return null;
+        }
         if (distanceFromCamp(x, y) <= 2 || isMine(x, y)) return null;
         const roll = hash(x, y, 2);
         const chests = world.gen >= 2 ? 0.017 : 0.011;
@@ -181,11 +253,22 @@
     function newWorld() {
         world = {
             seed: (Math.random() * 4294967296) >>> 0,
-            gen: 2, px: 0, py: 0, hearts: START_HEARTS, gold: 0, explored: 0, farthest: 0, over: false,
-            shrines: new Set(), chunks: new Map(), milestones: [], biomesSeen: [BIOMES[0].name],
+            gen: 3, level: 1, px: 0, py: 0, hearts: START_HEARTS, gold: 0, explored: 0, farthest: 0, over: false,
+            bonus: 0, places: [], shrines: new Set(), chunks: new Map(), milestones: [], biomesSeen: [BIOMES[0].name],
         };
+        arrive();
+    }
+
+    // Set out from camp in the place the current seed describes.
+    function arrive() {
         shrineCache = new Map();
         mineCache = new Map();
+        placeCache = null;
+        world.px = 0;
+        world.py = 0;
+        world.farthest = 0;
+        world.shrines = new Set();
+        world.chunks = new Map();
         open(0, 0);
         cam.x = 0; cam.y = 0; cam.free = false;
     }
@@ -199,9 +282,13 @@
             for (const [key, data] of Object.entries(saved.chunks)) {
                 chunks.set(key, Uint8Array.from(atob(data), (ch) => ch.charCodeAt(0)));
             }
-            world = { gen: 1, biomesSeen: [], ...saved, shrines: new Set(saved.shrines), chunks };
+            world = {
+                gen: 1, level: 1, bonus: 0, places: [], biomesSeen: [],
+                ...saved, shrines: new Set(saved.shrines), chunks,
+            };
             shrineCache = new Map();
             mineCache = new Map();
+            placeCache = null;
             if (!world.milestones) {
                 // Saved before milestones existed: count what was already done, quietly.
                 world.milestones = [];
@@ -227,7 +314,8 @@
 
     // ---- Play -------------------------------------------------------------
 
-    const score = () => world.gold + world.explored + world.farthest * 5;
+    // Each place left behind banks its distance and a bonus.
+    const score = () => world.gold + world.explored + world.farthest * 5 + world.bonus;
 
     function say(text) { statusEl.textContent = text; }
 
@@ -268,6 +356,7 @@
         cam.free = false;
         enterBiome(x, y);
         collect(x, y);
+        if (pickupAt(x, y) === 'gate') return useGate();
         changed();
         return true;
     }
@@ -293,7 +382,7 @@
         const value = cellAt(x, y);
         if (value & TAKEN) return;
         const kind = pickupAt(x, y);
-        if (!kind) return;
+        if (!kind || kind === 'gate') return;
         putCell(x, y, value | TAKEN);
         if (kind === 'gold') {
             const found = 10 + Math.floor(hash(x, y, 3) * 31);
@@ -315,8 +404,42 @@
             world.gold += 100;
             world.hearts = Math.min(MAX_HEARTS, world.hearts + 1);
             audio.play('win');
-            say(`You reached a shrine (${world.shrines.size} so far). +100 gold and a heart.`);
+            const total = place().shrines.length, left = shrinesLeft().length;
+            say(`Shrine ${total - left} of ${total} in ${place().name}. +100 gold and a heart.`);
+            if (!left) toast(`The gate of ${place().name} has opened. Find it to travel on.`);
         }
+    }
+
+    // Step through an open gate into the next place; a sealed one says why not.
+    function useGate() {
+        const left = shrinesLeft().length;
+        if (left) {
+            audio.play('deny');
+            say(`The gate is sealed. Visit ${left} more ${left === 1 ? 'shrine' : 'shrines'} in ${place().name} to open it.`);
+            changed();
+            return true;
+        }
+        const leaving = place().name;
+        stopWalking();
+        world.bonus += 250 + world.farthest * 5;
+        world.places.push(leaving);
+        world.level++;
+        world.gen = 3;
+        world.seed = (Math.random() * 4294967296) >>> 0;
+        arrive();
+        currentBiome = biomeAt(0, 0);
+        audio.play('win');
+        toast(`You leave ${leaving} behind…`);
+        announcePlace();
+        changed();
+        save();
+        return true;
+    }
+
+    function announcePlace() {
+        const here = place();
+        toast(`Place ${world.level}: ${here.name}`);
+        say(`${here.name}. ${here.line} Find its ${here.shrines.length} shrines to open the gate onward.`);
     }
 
     function toggleFlag(x, y) {
@@ -335,8 +458,11 @@
             best = final;
             try { localStorage.setItem(BEST_KEY, String(best)); } catch (e) { /* ignore */ }
         }
-        overText.textContent = `You uncovered ${world.explored} cells, travelled ${world.farthest} from camp, `
-            + `reached ${world.shrines.size} ${world.shrines.size === 1 ? 'shrine' : 'shrines'} and gathered ${world.gold} gold. `
+        const route = [...world.places, place().name].join(' → ');
+        const crossed = world.places.length;
+        overText.textContent = `Your road: ${route}. `
+            + `${crossed ? `You crossed ${crossed} ${crossed === 1 ? 'gate' : 'gates'}, ` : ''}`
+            + `uncovered ${world.explored} cells and gathered ${world.gold} gold. `
             + `Score ${final}${isBest ? ', a new best!' : ` (best ${best}).`}`;
         overEl.hidden = false;
     }
@@ -363,7 +489,7 @@
     function checkMilestones(quiet) {
         const reached = {
             explored: world.explored, farthest: world.farthest, shrines: world.shrines.size,
-            gold: world.gold, biomes: world.biomesSeen.length,
+            gold: world.gold, biomes: world.biomesSeen.length, places: world.places.length,
         };
         for (const [stat, target, text] of MILESTONES) {
             const id = stat + ':' + target;
@@ -444,13 +570,8 @@
             mini.fillStyle = fill;
             mini.fillRect(x - world.px + half - r, y - world.py + half - r, r * 2 + 1, r * 2 + 1);
         };
-        const rx0 = regionOf(world.px), ry0 = regionOf(world.py), reach = Math.ceil(half / REGION) + 1;
-        for (let ry = ry0 - reach; ry <= ry0 + reach; ry++) {
-            for (let rx = rx0 - reach; rx <= rx0 + reach; rx++) {
-                const shrine = shrineIn(rx, ry);
-                if (shrine) dot(shrine.x, shrine.y, world.shrines.has(shrine.key) ? '#9aa1bd' : '#f6c945', 1);
-            }
-        }
+        for (const shrine of place().shrines) dot(shrine.x, shrine.y, world.shrines.has(shrine.key) ? '#9aa1bd' : '#f6c945', 1);
+        dot(place().gate.x, place().gate.y, gateOpen() ? '#c49bff' : '#6b6f86', 2);
         if (Math.abs(world.px) < half && Math.abs(world.py) < half) dot(0, 0, '#5fd39a', 1);
         dot(world.px, world.py, '#ffffff', 1);
     }
@@ -528,18 +649,10 @@
     }
 
     function nearestShrine() {
-        const rx0 = regionOf(world.px), ry0 = regionOf(world.py);
         let found = null, foundDistance = Infinity;
-        for (let r = 0; r <= 4 && !found; r++) {
-            for (let ry = ry0 - r; ry <= ry0 + r; ry++) {
-                for (let rx = rx0 - r; rx <= rx0 + r; rx++) {
-                    if (Math.max(Math.abs(rx - rx0), Math.abs(ry - ry0)) !== r) continue;
-                    const shrine = shrineIn(rx, ry);
-                    if (!shrine || world.shrines.has(shrine.key)) continue;
-                    const d = Math.hypot(shrine.x - world.px, shrine.y - world.py);
-                    if (d < foundDistance) { found = shrine; foundDistance = d; }
-                }
-            }
+        for (const shrine of shrinesLeft()) {
+            const d = Math.hypot(shrine.x - world.px, shrine.y - world.py);
+            if (d < foundDistance) { found = shrine; foundDistance = d; }
         }
         return found;
     }
@@ -556,14 +669,23 @@
         scoreEl.textContent = current;
         scoreEl.title = `Best ${Math.max(best, current)}`;
 
-        const shrine = nearestShrine();
-        if (shrine) {
-            const dx = shrine.x - world.px, dy = shrine.y - world.py;
-            const names = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
-            const angle = Math.atan2(dy, dx);
-            arrowEl.style.transform = `rotate(${angle}rad)`;
-            compassText.textContent = `Nearest shrine: ${Math.max(Math.abs(dx), Math.abs(dy))} cells ${names[(Math.round(angle / (Math.PI / 4)) + 8) % 8]}.`;
-        }
+        const here = place();
+        placeEl.textContent = here.name;
+        placeLevelEl.textContent = `Place ${world.level}`;
+        placeLineEl.textContent = here.line;
+        const total = here.shrines.length, found = total - shrinesLeft().length;
+        const target = nearestShrine() ?? here.gate;
+        const dx = target.x - world.px, dy = target.y - world.py;
+        const names = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+        const angle = Math.atan2(dy, dx);
+        const where = dx || dy
+            ? `${Math.max(Math.abs(dx), Math.abs(dy))} cells ${names[(Math.round(angle / (Math.PI / 4)) + 8) % 8]}`
+            : 'right here';
+        arrowEl.style.transform = `rotate(${angle}rad)`;
+        compassText.textContent = gateOpen()
+            ? `All ${total} shrines found. The gate is open: ${where}.`
+            : `Shrines ${found}/${total}. Nearest: ${where}.`;
+        compassEl.classList.toggle('open', gateOpen());
     }
 
     function draw(now) {
@@ -595,7 +717,7 @@
                     g.fillRect(sx + 1, sy + 1, inner, inner);
                     if (pickup && !(value & TAKEN)) {
                         drawPickup(pickup, cx, cy, x, y);
-                    } else if (pickup === 'shrine') {
+                    } else if (pickup === 'shrine' || pickup === 'gate') {
                         drawPickup(pickup, cx, cy, x, y);
                     } else {
                         const n = adjacent(x, y);
@@ -619,10 +741,10 @@
                     if (state === FLAG) {
                         g.fillStyle = C.flag;
                         g.fillText('⚑', cx, cy);
-                    } else if (pickup === 'shrine') {
-                        // Shrines are landmarks: they show through the fog.
+                    } else if (pickup === 'shrine' || pickup === 'gate') {
+                        // Shrines and the gate are landmarks: they show through the fog.
                         g.globalAlpha = 0.65;
-                        drawPickup('shrine', cx, cy, x, y);
+                        drawPickup(pickup, cx, cy, x, y);
                         g.globalAlpha = 1;
                     }
                 }
@@ -658,6 +780,32 @@
     }
 
     function drawPickup(kind, cx, cy, x, y) {
+        if (kind === 'gate') {
+            // An arch: dark and sealed, or glowing once every shrine is found.
+            const open = gateOpen(), w = size * 0.62, h = size * 0.78, left = cx - w / 2, bottom = cy + h / 2;
+            if (open) {
+                const glow = g.createRadialGradient(cx, cy, 0, cx, cy, size * 1.6);
+                glow.addColorStop(0, 'rgba(196, 155, 255, 0.55)');
+                glow.addColorStop(1, 'rgba(196, 155, 255, 0)');
+                g.fillStyle = glow;
+                g.fillRect(cx - size * 1.6, cy - size * 1.6, size * 3.2, size * 3.2);
+            }
+            const arch = (inset) => {
+                g.beginPath();
+                g.moveTo(left + inset, bottom);
+                g.lineTo(left + inset, cy - h / 2 + w / 2);
+                g.arc(cx, cy - h / 2 + w / 2, w / 2 - inset, Math.PI, 0);
+                g.lineTo(left + w - inset, bottom);
+                g.closePath();
+            };
+            g.fillStyle = open ? '#c49bff' : '#6b6f86';
+            arch(0);
+            g.fill();
+            g.fillStyle = open ? '#f3e8ff' : '#1a1e2d';
+            arch(size * 0.11);
+            g.fill();
+            return;
+        }
         if (kind === 'shrine') {
             const visited = world.shrines.has(shrineIn(regionOf(x), regionOf(y)).key);
             const r = size * 0.36;
@@ -857,8 +1005,9 @@
         if (!world.over && world.explored > 20 && !window.confirm('Leave this world and start a new journey?')) return;
         stopWalking();
         newWorld();
+        currentBiome = biomeAt(0, 0);
         overEl.hidden = true;
-        say('A new world. Your camp is safe; the rest is up to you.');
+        announcePlace();
         changed();
         save();
         canvas.focus({ preventScroll: true });
@@ -925,9 +1074,10 @@
     renderHud();
     drawMinimap();
     if (world.over) finish();
-    else say(resumed ? 'Welcome back. Your journey continues where you left it.' : 'You set out from camp. Walk onto hidden cells to explore; the numbers warn of mines.');
+    else if (resumed) say(`Welcome back to ${place().name}. Your journey continues where you left it.`);
+    else announcePlace();
     requestAnimationFrame(frame);
 
     // Exposed for automated checks only.
-    window.__adventure = { get world() { return world; }, isMine, stateAt, shrineIn, route };
+    window.__adventure = { get world() { return world; }, isMine, stateAt, shrineIn, route, place };
 })();
