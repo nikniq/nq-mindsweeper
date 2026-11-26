@@ -394,13 +394,16 @@
             const found = 10 + Math.floor(hash(x, y, 3) * 31);
             world.gold += found;
             audio.play('coins');
+            floatText(x, y, `+${found}`, '#ffd34d');
             say(`A chest! +${found} gold.`);
         } else if (kind === 'heart') {
             if (world.hearts < MAX_HEARTS) {
                 world.hearts++;
+                floatText(x, y, '+♥', '#ff6b81');
                 say('You found a heart.');
             } else {
                 world.gold += 25;
+                floatText(x, y, '+25', '#ffd34d');
                 say('A heart, but yours are full. +25 gold instead.');
             }
             audio.play('heart');
@@ -408,6 +411,7 @@
             const shrine = shrineIn(regionOf(x), regionOf(y));
             world.shrines.add(shrine.key);
             world.gold += 100;
+            floatText(x, y, '+100 ♥', '#ffe680');
             world.hearts = Math.min(MAX_HEARTS, world.hearts + 1);
             audio.play('shrine');
             const total = place().shrines.length, left = shrinesLeft().length;
@@ -989,6 +993,11 @@
     }
 
     const reveals = new Map();   // recently opened cells: key -> { t, delay }
+    let floaters = [];           // rising '+gold' labels from pickups
+    function floatText(x, y, text, colour) {
+        floaters.push({ x, y, text, colour, t: performance.now() });
+        if (floaters.length > 6) floaters.shift();
+    }
     let blastFx = null;          // the last explosion, while its ring expands
 
     function draw(now) {
@@ -1119,6 +1128,26 @@
         g.fillRect(-10, 0, w + 20, h);
 
         drawAdventurer(px, py);
+
+        // Pickup labels drift up and fade.
+        floaters = floaters.filter((f) => now - f.t < 1100);
+        if (floaters.length) {
+            g.textAlign = 'center';
+            g.textBaseline = 'middle';
+            g.font = `bold ${Math.max(12, Math.round(size * 0.5))}px system-ui, sans-serif`;
+            g.lineWidth = 3;
+            g.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+            for (const f of floaters) {
+                const p = (now - f.t) / 1100;
+                const fx = (f.x - cam.x) * size + w / 2;
+                const fy = (f.y - cam.y) * size + h / 2 - size * (0.4 + p * 1.4);
+                g.globalAlpha = p < 0.7 ? 1 : (1 - p) / 0.3;
+                g.strokeText(f.text, fx, fy);
+                g.fillStyle = f.colour;
+                g.fillText(f.text, fx, fy);
+            }
+            g.globalAlpha = 1;
+        }
     }
 
     // A small traveller in a blue cloak and a wide hat, holding up a lantern.
@@ -1213,7 +1242,7 @@
                 dirty = true;
             }
         }
-        if (now < shakeUntil || reveals.size || blastFx) dirty = true;
+        if (now < shakeUntil || reveals.size || blastFx || floaters.length) dirty = true;
         if (dirty) {
             dirty = false;
             draw(now);
