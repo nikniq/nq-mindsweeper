@@ -165,6 +165,45 @@ window.GameAudio = (() => {
             });
             tone(sfxBus, hz(48), at + 0.4, { dur: 1, gain: 0.25, attack: 0.03 });
         },
+        // Coins tumbling out of a chest.
+        coins(at) {
+            [88, 91, 96, 93, 100].forEach((midi, k) => {
+                tone(sfxBus, hz(midi), at + k * 0.05 + Math.random() * 0.015, { dur: 0.12, gain: 0.1, type: 'square' });
+            });
+        },
+        // A warm rising chime for a heart.
+        heart(at) {
+            tone(sfxBus, hz(69), at, { dur: 0.35, gain: 0.18, slideTo: hz(76) });
+            tone(sfxBus, hz(81), at + 0.12, { dur: 0.5, gain: 0.12, type: 'triangle' });
+        },
+        // A ringing bell chord for a shrine.
+        shrine(at) {
+            [76, 83, 88].forEach((midi, k) => {
+                tone(sfxBus, hz(midi), at + k * 0.03, { dur: 1.6, gain: 0.12, attack: 0.004 });
+                tone(sfxBus, hz(midi) * 2.76, at + k * 0.03, { dur: 0.5, gain: 0.03 });
+            });
+            tone(sfxBus, hz(52), at, { dur: 1.4, gain: 0.18, attack: 0.02 });
+        },
+        // A swelling whoosh and rising sweep through a gate.
+        gate(at) {
+            const src = ctx.createBufferSource();
+            src.buffer = noise;
+            const filter = ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.Q.value = 4;
+            filter.frequency.setValueAtTime(200, at);
+            filter.frequency.exponentialRampToValueAtTime(3000, at + 0.9);
+            const env = ctx.createGain();
+            env.gain.setValueAtTime(0.0001, at);
+            env.gain.linearRampToValueAtTime(0.4, at + 0.5);
+            env.gain.exponentialRampToValueAtTime(0.0001, at + 1.1);
+            src.connect(filter).connect(env).connect(sfxBus);
+            src.start(at);
+            src.stop(at + 1.15);
+            [60, 67, 72, 79, 84].forEach((midi, k) => {
+                tone(sfxBus, hz(midi), at + 0.3 + k * 0.09, { dur: k === 4 ? 1 : 0.3, gain: 0.14, type: 'triangle' });
+            });
+        },
         lose(at) {
             const src = ctx.createBufferSource();
             src.buffer = noise;

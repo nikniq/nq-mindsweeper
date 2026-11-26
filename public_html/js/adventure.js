@@ -393,7 +393,7 @@
         if (kind === 'gold') {
             const found = 10 + Math.floor(hash(x, y, 3) * 31);
             world.gold += found;
-            audio.play('reveal', 8);
+            audio.play('coins');
             say(`A chest! +${found} gold.`);
         } else if (kind === 'heart') {
             if (world.hearts < MAX_HEARTS) {
@@ -403,13 +403,13 @@
                 world.gold += 25;
                 say('A heart, but yours are full. +25 gold instead.');
             }
-            audio.play('flag');
+            audio.play('heart');
         } else {
             const shrine = shrineIn(regionOf(x), regionOf(y));
             world.shrines.add(shrine.key);
             world.gold += 100;
             world.hearts = Math.min(MAX_HEARTS, world.hearts + 1);
-            audio.play('win');
+            audio.play('shrine');
             const total = place().shrines.length, left = shrinesLeft().length;
             say(`Shrine ${total - left} of ${total} in ${place().name}. +100 gold and a heart.`);
             if (!left) toast(`The gate of ${place().name} has opened. Find it to travel on.`);
@@ -434,7 +434,7 @@
         world.seed = (Math.random() * 4294967296) >>> 0;
         arrive();
         currentBiome = biomeAt(0, 0);
-        audio.play('win');
+        audio.play('gate');
         toast(`You leave ${leaving} behind…`);
         announcePlace();
         changed();
