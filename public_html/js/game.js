@@ -19,6 +19,7 @@
     const tipEl = document.getElementById('tip');
     const resultDetail = document.getElementById('result-detail');
     const resultShare = document.getElementById('result-share');
+    const resultReplay = document.getElementById('result-replay');
     const shareBtn = document.getElementById('share');
     const audio = window.GameAudio;
     const customForm = document.getElementById('custom-form');
@@ -70,6 +71,8 @@
     let flagMode = false;
 
     let cols, rows, mineCount, mines, adjacent, state, cells;
+    let firstIdx = null;
+    let replay = null, lastBoard = null; // a lost board, kept for practice
     let placed, over, revealedCount, flagCount, startedAt, tick, focusIdx;
     // startIdx: the cell a daily board must be opened from. ranked: whether
     // this run counts (a daily board only counts the first time it is played).
@@ -169,7 +172,8 @@
         return isBest;
     }
 
-    function newGame() {
+    function newGame(again = null) {
+        replay = again;
         // Walking away from a game in progress counts as a loss.
         if (placed && !over) recordResult(false);
 
@@ -218,6 +222,10 @@
             setTip(ranked
                 ? `Today's board (${DAY}) is the same for everyone. Start on the marked cell. Only your first attempt counts.${streakText}`
                 : `You have already played today's board, so this run is practice and is not ranked. Next board in ${untilNextDaily()}.${streakText}`);
+        } else if (replay) {
+            ranked = false;
+            startIdx = replay.first;
+            setTip('Replaying the board you lost. Start on the marked cell; this run is practice and is not ranked.');
         } else if (logicGame) {
             ranked = false;
             setTip(LOGIC_TIP);
@@ -231,6 +239,7 @@
         }
         resultDetail.hidden = true;
         resultShare.hidden = true;
+        resultReplay.hidden = true;
 
         timerEl.textContent = '0.0';
         minesLeftEl.textContent = mineCount;
@@ -307,6 +316,7 @@
         ({ mines, adjacent } = layout);
         // Opening the daily board uses up the attempt, win or lose.
         if (difficulty === DAILY && ranked) save('daily', { day: DAY, won: false, ms: null });
+        firstIdx = first;
         cells[first].classList.remove('start');
         placed = true;
         startedAt = performance.now();
@@ -318,6 +328,10 @@
     }
 
     function firstClick(i) {
+        if (replay) {
+            if (i !== replay.first) { setTip('Start on the marked cell to replay this board.'); return; }
+            return begin({ mines: replay.mines, adjacent: replay.adjacent }, i);
+        }
         if (!logicGame) {
             return begin(layMines(i, difficulty === DAILY ? seededRandom(DAY + ':mines') : Math.random), i);
         }
@@ -523,6 +537,10 @@
             }
         }
         cells[hit].classList.add('hit');
+        if (difficulty !== DAILY) {
+            lastBoard = { difficulty, mines, adjacent, first: firstIdx };
+            resultReplay.hidden = false;
+        }
         recordResult(false);
         audio.play('lose');
         const cleared = Math.floor((revealedCount / (cols * rows - mineCount)) * 100);
@@ -885,6 +903,10 @@
     } else {
         window.addEventListener('resize', fitBoard);
     }
+
+    document.getElementById('replay').addEventListener('click', () => {
+        if (lastBoard && lastBoard.difficulty === difficulty) newGame(lastBoard);
+    });
 
     newGame();
 })();

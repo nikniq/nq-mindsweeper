@@ -56,6 +56,7 @@
         <div id="result" class="result" role="status" aria-live="polite" hidden>
             <p id="result-text"></p>
             <p id="result-detail" class="detail" hidden></p>
+            <p id="result-replay" hidden><button type="button" id="replay" class="btn small">Replay this board</button></p>
             <p id="result-share" hidden><button type="button" id="share" class="btn small">Share result</button></p>
             <p id="result-guest" hidden>
                 Want your name on the leaderboard?
