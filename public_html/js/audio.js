@@ -204,6 +204,22 @@ window.GameAudio = (() => {
                 tone(sfxBus, hz(midi), at + 0.3 + k * 0.09, { dur: k === 4 ? 1 : 0.3, gain: 0.14, type: 'triangle' });
             });
         },
+        // A smaller, muffled blast for a thrown bomb.
+        bomb(at) {
+            const src = ctx.createBufferSource();
+            src.buffer = noise;
+            const filter = ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(1600, at);
+            filter.frequency.exponentialRampToValueAtTime(90, at + 0.45);
+            const env = ctx.createGain();
+            env.gain.setValueAtTime(0.45, at);
+            env.gain.exponentialRampToValueAtTime(0.0001, at + 0.5);
+            src.connect(filter).connect(env).connect(sfxBus);
+            src.start(at);
+            src.stop(at + 0.55);
+            tone(sfxBus, 110, at, { dur: 0.4, gain: 0.35, slideTo: 45 });
+        },
         lose(at) {
             const src = ctx.createBufferSource();
             src.buffer = noise;

@@ -31,6 +31,9 @@
             <button type="button" id="adv-scout" class="toggle" title="Spend 40 gold to flag every mine within two cells (R)">
                 <span aria-hidden="true">🔭</span> Scout <small>40g</small>
             </button>
+            <button type="button" id="adv-bomb" class="toggle" aria-pressed="false" title="Throw a bomb up to 6 cells to safely set off mines in a 3×3 area, 30 gold (B)">
+                <span aria-hidden="true">💣</span> Bomb <small>30g</small>
+            </button>
             <button type="button" id="adv-center" class="toggle" title="Bring the view back to your adventurer (C)">
                 <span aria-hidden="true">◎</span> Find me
             </button>
@@ -70,11 +73,11 @@
                 Step through it to travel on to the next place, which has more shrines and more mines. Your hearts and gold come with you.
                 Chests (◆) hold gold and hearts (♥) heal. The compass points to the nearest shrine, then to the gate.
                 Mines grow denser the farther you roam, and thicker still in some lands, such as the Ashen Wastes.
-                Short on nerve? Scout (40 gold) flags every mine within two cells of you.
+                Short on nerve? Scout (40 gold) flags every mine within two cells of you, or throw a bomb (30 gold) up to six cells away to safely set off every mine in a 3×3 area and uncover the ground there.
             </p>
             <p>
                 Click or tap to walk, even across the map along cells you have uncovered. Right-click or long-press to flag. Drag to look around; scroll, pinch or use the + and − buttons to zoom.
-                Keys: arrows or WASD walk, Q E Z X diagonally, Shift with a direction flags, F flag mode, R scout, C find me, + and − zoom, M music.
+                Keys: arrows or WASD walk, Q E Z X diagonally, Shift with a direction flags, F flag mode, B bomb mode, R scout, C find me, + and − zoom, M music.
                 Your journey is saved in this browser.
             </p>
         </div>

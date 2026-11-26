@@ -11,6 +11,7 @@
     const farthestEl = $('adv-farthest'), scoreEl = $('adv-score');
     const arrowEl = $('adv-arrow'), compassText = $('adv-compass-text');
     const statusEl = $('adv-status'), overEl = $('adv-over'), overText = $('adv-over-text');
+    const bombBtn = $('adv-bomb');
     const flagBtn = $('adv-flag'), musicBtn = $('music'), soundBtn = $('sound');
     const audio = window.GameAudio;
 
@@ -21,6 +22,7 @@
     const PATH_CAP = 6000;       // most cells a path search may visit
     const SAVE_KEY = 'adventure', BEST_KEY = 'adventureBest';
     const SCOUT_COST = 40, SCOUT_RADIUS = 2;
+    const BOMB_COST = 30, BOMB_RANGE = 6;
     const MINIMAP_CELLS = 128;   // cells across the minimap, one pixel each
     const BIOME_SCALE = 40;      // rough size of a biome, in cells
 
@@ -100,7 +102,7 @@
     let toastQueue = [], toastTimer = null;
     let size = 30;                               // cell size in CSS pixels
     const cam = { x: 0, y: 0, free: false };     // view centre, in cells
-    let dirty = true, walkQueue = [], walkTimer = null, flagMode = false, shakeUntil = 0, saveTimer = null;
+    let dirty = true, walkQueue = [], walkTimer = null, flagMode = false, bombMode = false, shakeUntil = 0, saveTimer = null;
 
     // ---- World generation ------------------------------------------------
 
@@ -531,6 +533,52 @@
         toastTimer = setTimeout(nextToast, 2600);
     }
 
+    // Throw a bomb at a cell within reach: mines in the 3×3 around it go off
+    // harmlessly and leave craters, and safe ground there is uncovered.
+    function throwBomb(x, y) {
+        if (world.over) return;
+        if (world.gold < BOMB_COST) {
+            audio.play('deny');
+            say(`A bomb costs ${BOMB_COST} gold and you have ${world.gold}.`);
+            return;
+        }
+        if (Math.max(Math.abs(x - world.px), Math.abs(y - world.py)) > BOMB_RANGE) {
+            audio.play('deny');
+            say(`That is too far to throw. Bombs reach ${BOMB_RANGE} cells.`);
+            return;
+        }
+        let cleared = 0, opened = 0;
+        const safe = [];
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                const cx = x + dx, cy = y + dy, state = stateAt(cx, cy);
+                if (state === OPEN || state === BLAST || (cx === world.px && cy === world.py)) continue;
+                if (isMine(cx, cy)) { setState(cx, cy, BLAST); cleared++; }
+                else { if (state === FLAG) setState(cx, cy, HIDDEN); safe.push([cx, cy]); }
+            }
+        }
+        for (const [cx, cy] of safe) opened += open(cx, cy);
+        if (!cleared && !opened) {
+            audio.play('deny');
+            say('Nothing there to blow up, so you keep your bomb.');
+            return;
+        }
+        world.gold -= BOMB_COST;
+        if (!reducedMotion) blastFx = { x, y, t: performance.now() };
+        shakeUntil = performance.now() + 200;
+        audio.play('bomb');
+        say(cleared
+            ? `Boom! The bomb set off ${cleared} ${cleared === 1 ? 'mine' : 'mines'} safely. −${BOMB_COST} gold.`
+            : `Boom! No mines there, but ${opened} cells uncovered. −${BOMB_COST} gold.`);
+        changed();
+    }
+
+    function setBombMode(on) {
+        bombMode = on;
+        bombBtn.setAttribute('aria-pressed', on);
+        if (on) { setFlagMode(false); say(`Bomb mode: click a cell up to ${BOMB_RANGE} away to throw a bomb (${BOMB_COST} gold).`); }
+    }
+
     // Pay gold to have every mine close by marked with a flag.
     function scout() {
         if (world.over) return;
@@ -673,6 +721,8 @@
         goldEl.textContent = world.gold;
         biomeEl.textContent = biomeAt(world.px, world.py).name;
         scoutBtn.disabled = world.over || world.gold < SCOUT_COST;
+        bombBtn.disabled = world.over || world.gold < BOMB_COST;
+        if (bombBtn.disabled && bombMode) setBombMode(false);
         exploredEl.textContent = world.explored;
         farthestEl.textContent = world.farthest;
         const current = score();
@@ -1343,7 +1393,8 @@
         press = null;
         if (wasPinch || done.panned || done.flagged) return;
         const [x, y] = cellAtPointer(e);
-        if (done.button === 2 || flagMode) toggleFlag(x, y);
+        if (bombMode && done.button === 0) throwBomb(x, y);
+        else if (done.button === 2 || flagMode) toggleFlag(x, y);
         else if (done.button === 0) goTo(x, y);
     });
     canvas.addEventListener('pointercancel', (e) => {
@@ -1401,6 +1452,7 @@
 
     function setFlagMode(on) {
         flagMode = on;
+        if (on && bombMode) { bombMode = false; bombBtn.setAttribute('aria-pressed', false); }
         flagBtn.setAttribute('aria-pressed', on);
     }
 
@@ -1432,6 +1484,7 @@
         if (key === 'f') setFlagMode(!flagMode);
         else if (key === 'c') centre();
         else if (key === 'r') scout();
+        else if (key === 'b') setBombMode(!bombMode);
         else if (key === 'n') restart();
         else if (key === '+' || key === '=') zoom(1.15);
         else if (key === '-' || key === '_') zoom(1 / 1.15);
@@ -1446,6 +1499,7 @@
     flagBtn.addEventListener('click', () => setFlagMode(!flagMode));
     $('adv-center').addEventListener('click', centre);
     scoutBtn.addEventListener('click', scout);
+    bombBtn.addEventListener('click', () => setBombMode(!bombMode));
     $('adv-new').addEventListener('click', restart);
     $('adv-restart').addEventListener('click', restart);
 
@@ -1482,5 +1536,5 @@
     requestAnimationFrame(frame);
 
     // Exposed for automated checks only.
-    window.__adventure = { get world() { return world; }, isMine, stateAt, shrineIn, route, place };
+    window.__adventure = { get world() { return world; }, isMine, stateAt, shrineIn, route, place, throwBomb };
 })();
